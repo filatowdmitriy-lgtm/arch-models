@@ -435,10 +435,10 @@
                 
                 const loader = new THREE.GLTFLoader();
                 
-                // ССЫЛКИ ЧЕРЕЗ GITHUB PAGES - САМЫЙ НАДЕЖНЫЙ СПОСОБ
+                // РАБОЧИЕ ССЫЛКИ - файлы в корне репозитория
                 const modelUrls = {
-                    'dorichescaya': 'models/dorichescaya.glb',
-                    'ionic': 'models/ionic.glb'
+                    'dorichescaya': 'https://raw.githubusercontent.com/filatowdmitriy-lgtm/arch-models/main/dorichescaya.glb',
+                    'ionic': 'https://raw.githubusercontent.com/filatowdmitriy-lgtm/arch-models/main/ionic.glb'
                 };
                 
                 const modelUrl = modelUrls[modelName];
@@ -494,12 +494,7 @@
                     (error) => {
                         console.error('Ошибка загрузки модели:', error);
                         document.getElementById('loading').style.display = 'none';
-                        this.updateStatus('Ошибка загрузки: ' + error.message);
-                        
-                        // Если не работает через GitHub Pages, показываем инструкцию
-                        if (error.message.includes('404')) {
-                            this.updateStatus('Ошибка: Создайте папку models в репозитории и загрузите туда .glb файлы');
-                        }
+                        this.updateStatus('Ошибка загрузки модели');
                     }
                 );
             }
