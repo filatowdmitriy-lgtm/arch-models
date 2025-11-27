@@ -435,14 +435,14 @@
                 
                 const loader = new THREE.GLTFLoader();
                 
-                // Используем CORS прокси для обхода блокировки
+                // ССЫЛКИ ЧЕРЕЗ GITHUB PAGES - САМЫЙ НАДЕЖНЫЙ СПОСОБ
                 const modelUrls = {
-                    'dorichescaya': 'https://corsproxy.io/?https://github.com/filatowdmitriy-lgtm/arch-models/raw/refs/heads/main/dorichescaya.glb',
-                    'ionic': 'https://corsproxy.io/?https://github.com/filatowdmitriy-lgtm/arch-models/raw/refs/heads/main/ionic.glb'
+                    'dorichescaya': 'models/dorichescaya.glb',
+                    'ionic': 'models/ionic.glb'
                 };
                 
                 const modelUrl = modelUrls[modelName];
-                console.log('URL модели через прокси:', modelUrl);
+                console.log('URL модели:', modelUrl);
                 
                 loader.load(
                     modelUrl,
@@ -453,7 +453,7 @@
                         this.currentModel = gltf.scene;
                         this.scene.add(this.currentModel);
                         
-                        // ЦЕНТРИРОВАНИЕ МОДЕЛИ - ФИКС PIVOT
+                        // ЦЕНТРИРОВАНИЕ МОДЕЛИ
                         const box = new THREE.Box3().setFromObject(this.currentModel);
                         const center = box.getCenter(new THREE.Vector3());
                         const size = box.getSize(new THREE.Vector3());
@@ -495,6 +495,11 @@
                         console.error('Ошибка загрузки модели:', error);
                         document.getElementById('loading').style.display = 'none';
                         this.updateStatus('Ошибка загрузки: ' + error.message);
+                        
+                        // Если не работает через GitHub Pages, показываем инструкцию
+                        if (error.message.includes('404')) {
+                            this.updateStatus('Ошибка: Создайте папку models в репозитории и загрузите туда .glb файлы');
+                        }
                     }
                 );
             }
