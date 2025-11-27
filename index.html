@@ -435,25 +435,45 @@
                 
                 const loader = new THREE.GLTFLoader();
                 
-                // Используем CORS прокси для обхода блокировки
+                // АЛЬТЕРНАТИВНЫЕ ССЫЛКИ ДЛЯ ОБХОДА CORS
                 const modelUrls = {
-                    'dorichescaya': 'https://corsproxy.io/?https://github.com/filatowdmitriy-lgtm/arch-models/raw/refs/heads/main/dorichescaya.glb',
-                    'ionic': 'https://corsproxy.io/?https://github.com/filatowdmitriy-lgtm/arch-models/raw/refs/heads/main/ionic.glb'
+                    'dorichescaya': [
+                        'models/dorichescaya.glb',  // Локальный путь через GitHub Pages
+                        'https://raw.githubusercontent.com/filatowdmitriy-lgtm/arch-models/main/dorichescaya.glb', // Raw GitHub
+                        'https://corsproxy.io/?https://github.com/filatowdmitriy-lgtm/arch-models/raw/refs/heads/main/dorichescaya.glb' // Прокси
+                    ],
+                    'ionic': [
+                        'models/ionic.glb',
+                        'https://raw.githubusercontent.com/filatowdmitriy-lgtm/arch-models/main/ionic.glb',
+                        'https://corsproxy.io/?https://github.com/filatowdmitriy-lgtm/arch-models/raw/refs/heads/main/ionic.glb'
+                    ]
                 };
                 
-                const modelUrl = modelUrls[modelName];
-                console.log('URL модели через прокси:', modelUrl);
+                this.tryLoadModel(loader, modelUrls[modelName], 0, modelName);
+            }
+            
+            tryLoadModel(loader, urls, index, modelName) {
+                if (index >= urls.length) {
+                    console.error('Все ссылки не сработали');
+                    document.getElementById('loading').style.display = 'none';
+                    this.updateStatus('Ошибка: не удалось загрузить модель');
+                    return;
+                }
+                
+                const url = urls[index];
+                console.log(`Попытка загрузки ${index + 1}/${urls.length}:`, url);
+                this.updateStatus(`Загрузка (${index + 1}/${urls.length})...`);
                 
                 loader.load(
-                    modelUrl,
+                    url,
                     
                     // onLoad
                     (gltf) => {
-                        console.log('Модель успешно загружена:', gltf);
+                        console.log('Модель успешно загружена с URL:', url);
                         this.currentModel = gltf.scene;
                         this.scene.add(this.currentModel);
                         
-                        // ЦЕНТРИРОВАНИЕ МОДЕЛИ - ФИКС PIVOT
+                        // ЦЕНТРИРОВАНИЕ МОДЕЛИ
                         const box = new THREE.Box3().setFromObject(this.currentModel);
                         const center = box.getCenter(new THREE.Vector3());
                         const size = box.getSize(new THREE.Vector3());
@@ -486,15 +506,15 @@
                         if (progress.lengthComputable) {
                             const percent = progress.loaded / progress.total * 100;
                             console.log('Прогресс загрузки:', percent + '%');
-                            this.updateStatus('Загрузка: ' + percent.toFixed(1) + '%');
+                            this.updateStatus(`Загрузка (${index + 1}/${urls.length}): ${percent.toFixed(1)}%`);
                         }
                     },
                     
                     // onError
                     (error) => {
-                        console.error('Ошибка загрузки модели:', error);
-                        document.getElementById('loading').style.display = 'none';
-                        this.updateStatus('Ошибка загрузки: ' + error.message);
+                        console.error(`Ошибка загрузки с URL ${url}:`, error);
+                        // Пробуем следующую ссылку
+                        this.tryLoadModel(loader, urls, index + 1, modelName);
                     }
                 );
             }
