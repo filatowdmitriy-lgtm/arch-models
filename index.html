@@ -5,49 +5,74 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>3D Архитектурные детали</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
         body { 
             margin: 0; 
             font-family: Arial, sans-serif; 
             background: #f0f0f0;
             overflow: hidden;
+            touch-action: none;
         }
+        
         #container { 
             width: 100vw; 
             height: 100vh; 
-            display: flex; 
+            display: flex;
+            flex-direction: column;
         }
+        
         #sidebar { 
-            width: 300px; 
+            width: 100%;
             background: white; 
-            padding: 20px; 
-            border-right: 1px solid #ccc;
+            padding: 15px;
+            border-bottom: 1px solid #ccc;
+            flex-shrink: 0;
         }
+        
+        .model-buttons {
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            padding-bottom: 5px;
+        }
+        
+        .model-btn { 
+            padding: 12px 16px;
+            border: 2px solid #ddd;
+            background: white;
+            cursor: pointer;
+            text-align: center;
+            white-space: nowrap;
+            flex-shrink: 0;
+            border-radius: 8px;
+        }
+        
+        .model-btn:hover {
+            border-color: #007bff;
+        }
+        
+        .model-btn.active {
+            border-color: #007bff;
+            background: #e3f2fd;
+        }
+        
         #viewer { 
             flex: 1; 
             position: relative; 
+            width: 100%;
         }
+        
         #canvas { 
             width: 100%; 
             height: 100%; 
             display: block; 
         }
-        .model-btn { 
-            display: block; 
-            width: 100%; 
-            padding: 15px; 
-            margin: 10px 0; 
-            border: 2px solid #ddd;
-            background: white;
-            cursor: pointer;
-            text-align: left;
-        }
-        .model-btn:hover {
-            border-color: #007bff;
-        }
-        .model-btn.active {
-            border-color: #007bff;
-            background: #e3f2fd;
-        }
+        
         #loading {
             position: absolute;
             top: 50%;
@@ -57,21 +82,87 @@
             color: white;
             padding: 20px;
             border-radius: 5px;
+            z-index: 10;
         }
+        
         .error {
             color: red;
             margin-top: 10px;
             font-size: 12px;
         }
+        
         .controls-info {
             position: absolute;
             bottom: 10px;
             left: 10px;
+            right: 10px;
             background: rgba(0,0,0,0.7);
             color: white;
             padding: 10px;
             border-radius: 5px;
             font-size: 12px;
+            text-align: center;
+            z-index: 5;
+        }
+        
+        .mobile-controls {
+            display: none;
+            position: absolute;
+            bottom: 60px;
+            right: 10px;
+            gap: 10px;
+            z-index: 5;
+        }
+        
+        .control-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            border: none;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        
+        /* Десктопная версия */
+        @media (min-width: 768px) {
+            #container {
+                flex-direction: row;
+            }
+            
+            #sidebar {
+                width: 300px;
+                height: 100vh;
+                border-right: 1px solid #ccc;
+                border-bottom: none;
+                overflow-y: auto;
+            }
+            
+            .model-buttons {
+                flex-direction: column;
+                overflow-x: visible;
+            }
+            
+            .model-btn {
+                text-align: left;
+            }
+            
+            .controls-info {
+                right: auto;
+                width: auto;
+            }
+            
+            .mobile-controls {
+                display: none !important;
+            }
+        }
+        
+        .hidden {
+            display: none;
         }
     </style>
 </head>
@@ -79,19 +170,27 @@
     <div id="container">
         <div id="sidebar">
             <h2>Архитектурные детали</h2>
-            <button class="model-btn active" data-model="dorichescaya">
-                Дорическая капитель
-            </button>
-            <button class="model-btn" data-model="ionic">
-                Ионическая капитель  
-            </button>
+            <div class="model-buttons">
+                <button class="model-btn active" data-model="dorichescaya">
+                    Дорическая капитель
+                </button>
+                <button class="model-btn" data-model="ionic">
+                    Ионическая капитель  
+                </button>
+            </div>
             <div id="status" class="error"></div>
         </div>
         <div id="viewer">
             <canvas id="canvas"></canvas>
             <div id="loading">Загрузка 3D...</div>
             <div class="controls-info">
-                ЛКМ: вращать • ПКМ: перемещать • Колесико: масштаб
+                <span class="desktop-info">ЛКМ: вращать • ПКМ: перемещать • Колесико: масштаб</span>
+                <span class="mobile-info">Два пальца: масштаб • Один палец: вращать</span>
+            </div>
+            <div class="mobile-controls" id="mobileControls">
+                <button class="control-btn" id="zoomIn">+</button>
+                <button class="control-btn" id="zoomOut">-</button>
+                <button class="control-btn" id="resetView">⟳</button>
             </div>
         </div>
     </div>
@@ -109,10 +208,16 @@
                 console.log('Инициализация ModelViewer...');
                 this.currentModel = null;
                 this.mouse = { x: 0, y: 0, down: false, button: 0 };
+                this.touch = { startX: 0, startY: 0, scale: 1, isScaling: false };
                 this.rotation = { x: 0, y: 0 };
                 this.targetRotation = { x: 0, y: 0 };
                 this.cameraDistance = 5;
+                this.isMobile = this.checkMobile();
                 this.init();
+            }
+
+            checkMobile() {
+                return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
             }
 
             init() {
@@ -133,19 +238,21 @@
                     });
                     this.renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
                     
-                    // Освещение
-                    const light1 = new THREE.DirectionalLight(0xffffff, 1);
-                    light1.position.set(5, 5, 5);
-                    this.scene.add(light1);
-                    
-                    const light2 = new THREE.AmbientLight(0x404040, 0.5);
-                    this.scene.add(light2);
+                    // УЛУЧШЕННОЕ ОСВЕЩЕНИЕ
+                    this.setupLighting();
                     
                     console.log('Three.js инициализирован');
                     this.updateStatus('Three.js загружен');
                     
-                    // Обработчики мыши
-                    this.setupMouseControls();
+                    // Настраиваем управление
+                    this.setupControls();
+                    
+                    // Показываем мобильные контролы если нужно
+                    if (this.isMobile) {
+                        document.getElementById('mobileControls').style.display = 'flex';
+                        document.querySelector('.desktop-info').style.display = 'none';
+                        document.querySelector('.mobile-info').style.display = 'block';
+                    }
                     
                     // Загружаем первую модель
                     this.loadModel('dorichescaya');
@@ -159,6 +266,24 @@
                         });
                     });
                     
+                    // Мобильные контролы
+                    document.getElementById('zoomIn').addEventListener('click', () => {
+                        this.cameraDistance = Math.max(1, this.cameraDistance - 0.5);
+                        this.updateCameraPosition();
+                    });
+                    
+                    document.getElementById('zoomOut').addEventListener('click', () => {
+                        this.cameraDistance = Math.min(20, this.cameraDistance + 0.5);
+                        this.updateCameraPosition();
+                    });
+                    
+                    document.getElementById('resetView').addEventListener('click', () => {
+                        this.rotation = { x: 0, y: 0 };
+                        this.targetRotation = { x: 0, y: 0 };
+                        this.cameraDistance = 5;
+                        this.updateCameraPosition();
+                    });
+                    
                     // Анимация
                     this.animate();
                     
@@ -168,9 +293,41 @@
                 }
             }
             
-            setupMouseControls() {
+            setupLighting() {
+                // Основной направленный свет
+                const mainLight = new THREE.DirectionalLight(0xffffff, 1.2);
+                mainLight.position.set(10, 10, 10);
+                mainLight.castShadow = true;
+                this.scene.add(mainLight);
+                
+                // Заполняющий свет спереди
+                const fillLight = new THREE.DirectionalLight(0xffffff, 0.6);
+                fillLight.position.set(-5, 5, 5);
+                this.scene.add(fillLight);
+                
+                // Боковой свет
+                const sideLight = new THREE.DirectionalLight(0xffffff, 0.4);
+                sideLight.position.set(0, 10, -10);
+                this.scene.add(sideLight);
+                
+                // Верхний свет
+                const topLight = new THREE.DirectionalLight(0xffffff, 0.3);
+                topLight.position.set(0, 10, 0);
+                this.scene.add(topLight);
+                
+                // Окружающее освещение
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.8);
+                this.scene.add(ambientLight);
+                
+                // Мягкий заполняющий свет снизу
+                const bottomLight = new THREE.HemisphereLight(0xffffff, 0x404040, 0.3);
+                this.scene.add(bottomLight);
+            }
+            
+            setupControls() {
                 const canvas = document.getElementById('canvas');
                 
+                // ДЕСКТОП: управление мышью
                 canvas.addEventListener('mousedown', (e) => {
                     this.mouse.down = true;
                     this.mouse.button = e.button;
@@ -207,6 +364,51 @@
                     this.cameraDistance += e.deltaY * 0.01;
                     this.cameraDistance = Math.max(1, Math.min(20, this.cameraDistance));
                     this.updateCameraPosition();
+                });
+                
+                // МОБИЛЬНЫЕ: сенсорное управление
+                canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    if (e.touches.length === 1) {
+                        this.touch.startX = e.touches[0].clientX;
+                        this.touch.startY = e.touches[0].clientY;
+                        this.touch.isScaling = false;
+                    } else if (e.touches.length === 2) {
+                        this.touch.isScaling = true;
+                        this.touch.startDistance = Math.hypot(
+                            e.touches[0].clientX - e.touches[1].clientX,
+                            e.touches[0].clientY - e.touches[1].clientY
+                        );
+                    }
+                });
+                
+                canvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    
+                    if (e.touches.length === 1 && !this.touch.isScaling) {
+                        // Вращение одним пальцем
+                        const dx = e.touches[0].clientX - this.touch.startX;
+                        const dy = e.touches[0].clientY - this.touch.startY;
+                        
+                        this.targetRotation.y += dx * 0.01;
+                        this.targetRotation.x += dy * 0.01;
+                        
+                        this.touch.startX = e.touches[0].clientX;
+                        this.touch.startY = e.touches[0].clientY;
+                    } else if (e.touches.length === 2) {
+                        // Масштабирование двумя пальцами
+                        const distance = Math.hypot(
+                            e.touches[0].clientX - e.touches[1].clientX,
+                            e.touches[0].clientY - e.touches[1].clientY
+                        );
+                        
+                        const scaleChange = distance / this.touch.startDistance;
+                        this.cameraDistance /= scaleChange;
+                        this.cameraDistance = Math.max(1, Math.min(20, this.cameraDistance));
+                        this.updateCameraPosition();
+                        
+                        this.touch.startDistance = distance;
+                    }
                 });
                 
                 // Блокируем контекстное меню на канвасе
@@ -251,14 +453,26 @@
                         this.currentModel = gltf.scene;
                         this.scene.add(this.currentModel);
                         
-                        // Сбрасываем вращение и позицию
+                        // ЦЕНТРИРОВАНИЕ МОДЕЛИ - ФИКС PIVOT
+                        const box = new THREE.Box3().setFromObject(this.currentModel);
+                        const center = box.getCenter(new THREE.Vector3());
+                        const size = box.getSize(new THREE.Vector3());
+                        
+                        console.log('Центр модели:', center);
+                        console.log('Размер модели:', size);
+                        
+                        // Смещаем модель так, чтобы ее центр был в точке (0,0,0)
+                        this.currentModel.position.x = -center.x;
+                        this.currentModel.position.y = -center.y;
+                        this.currentModel.position.z = -center.z;
+                        
+                        // Сбрасываем вращение и позицию камеры
                         this.rotation = { x: 0, y: 0 };
                         this.targetRotation = { x: 0, y: 0 };
-                        this.cameraDistance = 5;
                         
-                        if (this.currentModel) {
-                            this.currentModel.position.set(0, 0, 0);
-                        }
+                        // Настраиваем расстояние камеры в зависимости от размера модели
+                        const maxSize = Math.max(size.x, size.y, size.z);
+                        this.cameraDistance = maxSize * 1.5;
                         
                         this.updateCameraPosition();
                         
