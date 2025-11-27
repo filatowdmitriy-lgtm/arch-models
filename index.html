@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Архитектурные детали</title>
+    <style>
+        body { 
+            margin: 0; 
+            font-family: Arial, sans-serif; 
+            background: #f0f0f0;
+        }
+        #container { 
+            width: 100vw; 
+            height: 100vh; 
+            display: flex; 
+        }
+        #sidebar { 
+            width: 300px; 
+            background: white; 
+            padding: 20px; 
+            border-right: 1px solid #ccc;
+        }
+        #viewer { 
+            flex: 1; 
+            position: relative; 
+        }
+        #canvas { 
+            width: 100%; 
+            height: 100%; 
+            display: block; 
+        }
+        .model-btn { 
+            display: block; 
+            width: 100%; 
+            padding: 15px; 
+            margin: 10px 0; 
+            border: 2px solid #ddd;
+            background: white;
+            cursor: pointer;
+            text-align: left;
+        }
+        .model-btn:hover {
+            border-color: #007bff;
+        }
+        .model-btn.active {
+            border-color: #007bff;
+            background: #e3f2fd;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="sidebar">
+            <h2>Архитектурные детали</h2>
+            <button class="model-btn active" data-model="dorichescaya">
+                Дорическая капитель
+            </button>
+            <button class="model-btn" data-model="ionic">
+                Ионическая капитель  
+            </button>
+        </div>
+        <div id="viewer">
+            <canvas id="canvas"></canvas>
+            <div id="loading">Загрузка...</div>
+        </div>
+    </div>
+
+    <!-- Подключаем Three.js из CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/controls/OrbitControls.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/loaders/GLTFLoader.min.js"></script>
+
+    <script>
+        // Ждем загрузки библиотек
+        window.addEventListener('load', function() {
+            const viewer = new ModelViewer();
+        });
+
+        class ModelViewer {
+            constructor() {
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0xeeeeee);
+                
+                // Камера
+                this.camera = new THREE.PerspectiveCamera(75, (window.innerWidth - 300) / window.innerHeight, 0.1, 1000);
+                this.camera.position.set(5, 5, 5);
+                
+                // Рендерер
+                this.renderer = new THREE.WebGLRenderer({ 
+                    canvas: document.getElementById('canvas'),
+                    antialias: true 
+                });
+                this.renderer.setSize(window.innerWidth - 300, window.innerHeight);
+                
+                // Освещение
+                const light1 = new THREE.DirectionalLight(0xffffff, 1);
+                light1.position.set(10, 10, 10);
+                this.scene.add(light1);
+                
+                const light2 = new THREE.AmbientLight(0x404040);
+                this.scene.add(light2);
+                
+                // Управление
+                this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+                this.controls.enableDamping = true;
+                
+                // Загружаем первую модель
+                this.loadModel('dorichescaya');
+                
+                // Назначаем обработчики кнопок
+                document.querySelectorAll('.model-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        document.querySelectorAll('.model-btn').forEach(b => b.classList.remove('active'));
+                        btn.classList.add('active');
+                        this.loadModel(btn.dataset.model);
+                    });
+                });
+                
+                // Анимация
+                this.animate();
+            }
+            
+            loadModel(modelName) {
+                document.getElementById('loading').style.display = 'block';
+                
+                // Удаляем старую модель
+                if (this.currentModel) {
+                    this.scene.remove(this.currentModel);
+                }
+                
+                const loader = new THREE.GLTFLoader();
+                let modelUrl;
+                
+                if (modelName === 'dorichescaya') {
+                    modelUrl = 'https://github.com/filatowdmitriy-lgtm/arch-models/raw/refs/heads/main/dorichescaya.glb';
+                } else if (modelName === 'ionic') {
+                    modelUrl = 'https://github.com/filatowdmitriy-lgtm/arch-models/raw/refs/heads/main/ionic.glb';
+                }
+                
+                loader.load(modelUrl, (gltf) => {
+                    this.currentModel = gltf.scene;
+                    this.scene.add(this.currentModel);
+                    
+                    // Центрируем модель
+                    const box = new THREE.Box3().setFromObject(this.currentModel);
+                    const center = box.getCenter(new THREE.Vector3());
+                    const size = box.getSize(new THREE.Vector3());
+                    
+                    this.currentModel.position.x = -center.x;
+                    this.currentModel.position.y = -center.y;
+                    this.currentModel.position.z = -center.z;
+                    
+                    this.controls.target.copy(center);
+                    this.controls.update();
+                    
+                    document.getElementById('loading').style.display = 'none';
+                    
+                }, undefined, (error) => {
+                    console.error('Ошибка загрузки:', error);
+                    document.getElementById('loading').style.display = 'none';
+                    alert('Ошибка загрузки модели');
+                });
+            }
+            
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                this.controls.update();
+                this.renderer.render(this.scene, this.camera);
+            }
+        }
+        
+        // Обработчик изменения размера окна
+        window.addEventListener('resize', function() {
+            if (window.viewer) {
+                window.viewer.camera.aspect = (window.innerWidth - 300) / window.innerHeight;
+                window.viewer.camera.updateProjectionMatrix();
+                window.viewer.renderer.setSize(window.innerWidth - 300, window.innerHeight);
+            }
+        });
+    </script>
+</body>
+</html>
