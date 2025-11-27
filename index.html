@@ -233,14 +233,14 @@
                 
                 const loader = new THREE.GLTFLoader();
                 
-                // Прямые ссылки на ваши модели
+                // Используем CORS прокси для обхода блокировки
                 const modelUrls = {
-                    'dorichescaya': 'https://github.com/filatowdmitriy-lgtm/arch-models/raw/refs/heads/main/dorichescaya.glb',
-                    'ionic': 'https://github.com/filatowdmitriy-lgtm/arch-models/raw/refs/heads/main/ionic.glb'
+                    'dorichescaya': 'https://corsproxy.io/?https://github.com/filatowdmitriy-lgtm/arch-models/raw/refs/heads/main/dorichescaya.glb',
+                    'ionic': 'https://corsproxy.io/?https://github.com/filatowdmitriy-lgtm/arch-models/raw/refs/heads/main/ionic.glb'
                 };
                 
                 const modelUrl = modelUrls[modelName];
-                console.log('URL модели:', modelUrl);
+                console.log('URL модели через прокси:', modelUrl);
                 
                 loader.load(
                     modelUrl,
