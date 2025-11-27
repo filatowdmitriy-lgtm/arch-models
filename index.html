@@ -212,6 +212,8 @@
                 this.rotation = { x: 0, y: 0 };
                 this.targetRotation = { x: 0, y: 0 };
                 this.cameraDistance = 5;
+                this.minCameraDistance = 2;
+                this.maxCameraDistance = 20;
                 this.isMobile = this.checkMobile();
                 this.init();
             }
@@ -268,12 +270,12 @@
                     
                     // Мобильные контролы
                     document.getElementById('zoomIn').addEventListener('click', () => {
-                        this.cameraDistance = Math.max(1, this.cameraDistance - 0.5);
+                        this.cameraDistance = Math.max(this.minCameraDistance, this.cameraDistance - 0.5);
                         this.updateCameraPosition();
                     });
                     
                     document.getElementById('zoomOut').addEventListener('click', () => {
-                        this.cameraDistance = Math.min(20, this.cameraDistance + 0.5);
+                        this.cameraDistance = Math.min(this.maxCameraDistance, this.cameraDistance + 0.5);
                         this.updateCameraPosition();
                     });
                     
@@ -294,33 +296,35 @@
             }
             
             setupLighting() {
+                // УСИЛЕННОЕ ОСВЕЩЕНИЕ ДЛЯ МОБИЛЬНЫХ
+                const lightIntensity = this.isMobile ? 1.5 : 1.0;
+                
                 // Основной направленный свет
-                const mainLight = new THREE.DirectionalLight(0xffffff, 1.2);
+                const mainLight = new THREE.DirectionalLight(0xffffff, 1.5 * lightIntensity);
                 mainLight.position.set(10, 10, 10);
-                mainLight.castShadow = true;
                 this.scene.add(mainLight);
                 
                 // Заполняющий свет спереди
-                const fillLight = new THREE.DirectionalLight(0xffffff, 0.6);
+                const fillLight = new THREE.DirectionalLight(0xffffff, 1.0 * lightIntensity);
                 fillLight.position.set(-5, 5, 5);
                 this.scene.add(fillLight);
                 
                 // Боковой свет
-                const sideLight = new THREE.DirectionalLight(0xffffff, 0.4);
+                const sideLight = new THREE.DirectionalLight(0xffffff, 0.8 * lightIntensity);
                 sideLight.position.set(0, 10, -10);
                 this.scene.add(sideLight);
                 
                 // Верхний свет
-                const topLight = new THREE.DirectionalLight(0xffffff, 0.3);
+                const topLight = new THREE.DirectionalLight(0xffffff, 0.6 * lightIntensity);
                 topLight.position.set(0, 10, 0);
                 this.scene.add(topLight);
                 
-                // Окружающее освещение
-                const ambientLight = new THREE.AmbientLight(0x404040, 0.8);
+                // Окружающее освещение (усилено для мобильных)
+                const ambientLight = new THREE.AmbientLight(0x404040, 1.2 * lightIntensity);
                 this.scene.add(ambientLight);
                 
                 // Мягкий заполняющий свет снизу
-                const bottomLight = new THREE.HemisphereLight(0xffffff, 0x404040, 0.3);
+                const bottomLight = new THREE.HemisphereLight(0xffffff, 0x404040, 0.5 * lightIntensity);
                 this.scene.add(bottomLight);
             }
             
@@ -342,7 +346,8 @@
                     const dy = e.clientY - this.mouse.y;
                     
                     if (this.mouse.button === 0) { // ЛКМ - вращение
-                        this.targetRotation.y += dx * 0.01;
+                        // ИНВЕРТИРОВАНО ПО ГОРИЗОНТАЛИ: dx * -0.01 вместо dx * 0.01
+                        this.targetRotation.y += dx * -0.01;
                         this.targetRotation.x += dy * 0.01;
                     } else if (this.mouse.button === 2) { // ПКМ - панорамирование
                         if (this.currentModel) {
@@ -361,8 +366,10 @@
                 
                 canvas.addEventListener('wheel', (e) => {
                     e.preventDefault();
-                    this.cameraDistance += e.deltaY * 0.01;
-                    this.cameraDistance = Math.max(1, Math.min(20, this.cameraDistance));
+                    // ПЛАВНОЕ МАСШТАБИРОВАНИЕ с коэффициентом 0.005 вместо 0.01
+                    const zoomSpeed = 0.005;
+                    this.cameraDistance += e.deltaY * zoomSpeed;
+                    this.cameraDistance = Math.max(this.minCameraDistance, Math.min(this.maxCameraDistance, this.cameraDistance));
                     this.updateCameraPosition();
                 });
                 
@@ -386,11 +393,11 @@
                     e.preventDefault();
                     
                     if (e.touches.length === 1 && !this.touch.isScaling) {
-                        // Вращение одним пальцем
+                        // Вращение одним пальцем (ИНВЕРТИРОВАНО ПО ГОРИЗОНТАЛИ)
                         const dx = e.touches[0].clientX - this.touch.startX;
                         const dy = e.touches[0].clientY - this.touch.startY;
                         
-                        this.targetRotation.y += dx * 0.01;
+                        this.targetRotation.y += dx * -0.01;
                         this.targetRotation.x += dy * 0.01;
                         
                         this.touch.startX = e.touches[0].clientX;
@@ -404,7 +411,7 @@
                         
                         const scaleChange = distance / this.touch.startDistance;
                         this.cameraDistance /= scaleChange;
-                        this.cameraDistance = Math.max(1, Math.min(20, this.cameraDistance));
+                        this.cameraDistance = Math.max(this.minCameraDistance, Math.min(this.maxCameraDistance, this.cameraDistance));
                         this.updateCameraPosition();
                         
                         this.touch.startDistance = distance;
@@ -420,6 +427,24 @@
                 this.camera.position.y = this.cameraDistance * Math.sin(this.rotation.x);
                 this.camera.position.z = this.cameraDistance * Math.cos(this.rotation.y) * Math.cos(this.rotation.x);
                 this.camera.lookAt(0, 0, 0);
+            }
+            
+            applyGypsumMaterial(object) {
+                // Создаем материал цвета гипса #5c5c5c (темно-серый)
+                const gypsumMaterial = new THREE.MeshLambertMaterial({
+                    color: 0x5c5c5c, // Темно-серый цвет #5c5c5c
+                    emissive: 0x000000,
+                    emissiveIntensity: 0,
+                    transparent: false,
+                    opacity: 1
+                });
+                
+                // Рекурсивно применяем материал ко всем мешам
+                object.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material = gypsumMaterial;
+                    }
+                });
             }
             
             loadModel(modelName) {
@@ -451,6 +476,10 @@
                     (gltf) => {
                         console.log('Модель успешно загружена:', gltf);
                         this.currentModel = gltf.scene;
+                        
+                        // ПРИМЕНЯЕМ ГИПСОВЫЙ МАТЕРИАЛ КО ВСЕЙ МОДЕЛИ
+                        this.applyGypsumMaterial(this.currentModel);
+                        
                         this.scene.add(this.currentModel);
                         
                         // ЦЕНТРИРОВАНИЕ МОДЕЛИ
@@ -473,6 +502,11 @@
                         // Настраиваем расстояние камеры в зависимости от размера модели
                         const maxSize = Math.max(size.x, size.y, size.z);
                         this.cameraDistance = maxSize * 1.5;
+                        
+                        // Устанавливаем ограничения масштабирования на основе размера модели
+                        // УВЕЛИЧЕН МИНИМАЛЬНЫЙ РАССТОЯНИЕ для исключения пересечений
+                        this.minCameraDistance = maxSize * 1.2; // Нельзя подойти ближе чем 120% от размера модели
+                        this.maxCameraDistance = maxSize * 4;   // Нельзя отойти дальше чем 400% от размера модели
                         
                         this.updateCameraPosition();
                         
