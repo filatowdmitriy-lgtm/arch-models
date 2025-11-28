@@ -3,577 +3,314 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Архитектурные детали</title>
+    <title>3D Архитектурные детали — Viewer (r153)</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body { 
-            margin: 0; 
-            font-family: Arial, sans-serif; 
-            background: #f0f0f0;
-            overflow: hidden;
-            touch-action: none;
-        }
-        
-        #container { 
-            width: 100vw; 
-            height: 100vh; 
-            display: flex;
-            flex-direction: column;
-        }
-        
-        #sidebar { 
-            width: 100%;
-            background: white; 
-            padding: 15px;
-            border-bottom: 1px solid #ccc;
-            flex-shrink: 0;
-        }
-        
-        .model-buttons {
-            display: flex;
-            gap: 10px;
-            overflow-x: auto;
-            padding-bottom: 5px;
-        }
-        
-        .model-btn { 
-            padding: 12px 16px;
-            border: 2px solid #ddd;
-            background: white;
-            cursor: pointer;
-            text-align: center;
-            white-space: nowrap;
-            flex-shrink: 0;
-            border-radius: 8px;
-        }
-        
-        .model-btn:hover {
-            border-color: #007bff;
-        }
-        
-        .model-btn.active {
-            border-color: #007bff;
-            background: #e3f2fd;
-        }
-        
-        #viewer { 
-            flex: 1; 
-            position: relative; 
-            width: 100%;
-        }
-        
-        #canvas { 
-            width: 100%; 
-            height: 100%; 
-            display: block; 
-        }
-        
-        #loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.8);
-            color: white;
-            padding: 20px;
-            border-radius: 5px;
-            z-index: 10;
-        }
-        
-        .error {
-            color: red;
-            margin-top: 10px;
-            font-size: 12px;
-        }
-        
-        .controls-info {
-            position: absolute;
-            bottom: 10px;
-            left: 10px;
-            right: 10px;
-            background: rgba(0,0,0,0.7);
-            color: white;
-            padding: 10px;
-            border-radius: 5px;
-            font-size: 12px;
-            text-align: center;
-            z-index: 5;
-        }
-        
-        .mobile-controls {
-            display: none;
-            position: absolute;
-            bottom: 60px;
-            right: 10px;
-            gap: 10px;
-            z-index: 5;
-        }
-        
-        .control-btn {
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background: rgba(0,0,0,0.7);
-            color: white;
-            border: none;
-            font-size: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-        }
-        
-        /* Десктопная версия */
-        @media (min-width: 768px) {
-            #container {
-                flex-direction: row;
-            }
-            
-            #sidebar {
-                width: 300px;
-                height: 100vh;
-                border-right: 1px solid #ccc;
-                border-bottom: none;
-                overflow-y: auto;
-            }
-            
-            .model-buttons {
-                flex-direction: column;
-                overflow-x: visible;
-            }
-            
-            .model-btn {
-                text-align: left;
-            }
-            
-            .controls-info {
-                right: auto;
-                width: auto;
-            }
-            
-            .mobile-controls {
-                display: none !important;
-            }
-        }
-        
-        .hidden {
-            display: none;
+        *{box-sizing:border-box}
+        html,body{height:100%;margin:0;background:#0f0f10;color:#eee;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial}
+        #container{display:flex;flex-direction:column;height:100vh;}
+        #sidebar{background:#151515;color:#fff;padding:18px;border-bottom:1px solid #222;flex-shrink:0}
+        #sidebar h2{font-size:18px;margin-bottom:12px}
+        .model-list{display:flex;gap:10px;overflow:auto;padding-bottom:6px}
+        .model-item{background:linear-gradient(180deg,#202024,#151518);padding:10px 12px;border-radius:8px;border:1px solid #2b2b2f;cursor:pointer;white-space:nowrap;flex-shrink:0;min-width:160px}
+        .model-item.active{outline:2px solid rgba(255,255,255,0.06);box-shadow:0 6px 18px rgba(0,0,0,0.6)}
+        #info{margin-top:14px;font-size:13px;line-height:1.35;opacity:0.95}
+        #info h1{font-size:18px;margin:0 0 8px 0}
+        #info .meta{opacity:0.8;font-size:13px;margin-bottom:8px}
+        #viewer{flex:1;position:relative;display:block;overflow:hidden}
+        canvas{display:block;width:100%;height:100%}
+        #loading{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(10,10,10,0.6);padding:14px 18px;border-radius:12px;border:1px solid #333;backdrop-filter:blur(6px);display:flex;align-items:center;gap:12px}
+        .spinner{width:36px;height:36px;border-radius:50%;border:4px solid rgba(255,255,255,0.08);border-top-color:#fff;animation:spin 1s linear infinite}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        .progress{height:6px;background:#222;border-radius:6px;overflow:hidden;min-width:140px}
+        .progress > i{display:block;height:100%;width:0;background:linear-gradient(90deg,#8ab4ff,#5de0a3)}
+        .controls-info{position:absolute;left:12px;bottom:12px;padding:8px 12px;border-radius:10px;background:rgba(8,8,8,0.5);border:1px solid rgba(255,255,255,0.03);font-size:13px}
+        .mobile-controls{position:absolute;right:12px;bottom:18px;display:flex;gap:8px}
+        .control-btn{width:44px;height:44px;border-radius:10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.03);display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff}
+        @media(min-width:780px){
+            #container{flex-direction:row}
+            #sidebar{width:320px;height:100vh;border-right:1px solid #171717;border-bottom:none;overflow:auto}
+            .model-list{flex-direction:column}
+            .model-item{min-width:unset;width:100%}
         }
     </style>
 </head>
 <body>
-    <div id="container">
-        <div id="sidebar">
-            <h2>Архитектурные детали</h2>
-            <div class="model-buttons">
-                <button class="model-btn active" data-model="dorichescaya">
-                    Дорическая капитель
-                </button>
-                <button class="model-btn" data-model="ionic">
-                    Ионическая капитель  
-                </button>
-            </div>
-            <div id="status" class="error"></div>
+<div id="container">
+    <div id="sidebar">
+        <h2>Архитектурные детали</h2>
+        <div class="model-list">
+            <div class="model-item active" data-model="dorichescaya">Дорическая капитель</div>
+            <div class="model-item" data-model="ionic">Ионическая капитель</div>
         </div>
-        <div id="viewer">
-            <canvas id="canvas"></canvas>
-            <div id="loading">Загрузка 3D...</div>
-            <div class="controls-info">
-                <span class="desktop-info">ЛКМ: вращать • ПКМ: перемещать • Колесико: масштаб</span>
-                <span class="mobile-info">Два пальца: масштаб • Один палец: вращать</span>
-            </div>
-            <div class="mobile-controls" id="mobileControls">
-                <button class="control-btn" id="zoomIn">+</button>
-                <button class="control-btn" id="zoomOut">-</button>
-                <button class="control-btn" id="resetView">⟳</button>
-            </div>
+        <div id="info">
+            <h1 id="model-title">Дорическая капитель</h1>
+            <div class="meta" id="model-style">Архитектурный стиль: Дорический ордер</div>
+            <div class="meta" id="model-period">Исторический период: VII–V века до н. э.</div>
+            <p id="model-description">Дорическая капитель — самая строгая и простая из классических.</p>
         </div>
     </div>
 
-    <!-- Three.js r110 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/110/three.min.js"></script>
-    <!-- GLTFLoader для Three.js r110 -->
-    <script src="https://cdn.jsdelivr.net/npm/three@0.110.0/examples/js/loaders/GLTFLoader.js"></script>
+    <div id="viewer">
+        <canvas id="canvas"></canvas>
 
-    <script>
-        console.log('Скрипт запускается...');
-        
-        class ModelViewer {
-            constructor() {
-                console.log('Инициализация ModelViewer...');
-                this.currentModel = null;
-                this.mouse = { x: 0, y: 0, down: false, button: 0 };
-                this.touch = { startX: 0, startY: 0, scale: 1, isScaling: false };
-                this.rotation = { x: 0, y: 0 };
-                this.targetRotation = { x: 0, y: 0 };
-                this.cameraDistance = 5;
-                this.minCameraDistance = 2;
-                this.maxCameraDistance = 20;
-                this.isMobile = this.checkMobile();
-                this.init();
+        <div id="loading">
+            <div class="spinner" aria-hidden="true"></div>
+            <div style="display:flex;flex-direction:column">
+                <div id="loadingText">Загрузка...</div>
+                <div class="progress" style="margin-top:8px"><i id="progressBar"></i></div>
+            </div>
+        </div>
+
+        <div class="controls-info">
+            <span class="desktop-info">ЛКМ: вращать • ПКМ: перемещать • Колесико: масштаб</span>
+            <span class="mobile-info" style="display:none">Один палец: вращать • Два пальца: масштаб</span>
+        </div>
+
+        <div class="mobile-controls" id="mobileControls" style="display:none">
+            <button class="control-btn" id="zoomIn">+</button>
+            <button class="control-btn" id="zoomOut">−</button>
+            <button class="control-btn" id="resetView">⟳</button>
+        </div>
+    </div>
+</div>
+
+<!-- Three.js r153 + GLTFLoader as module -->
+<script type="module">
+
+import * as THREE from "https://unpkg.com/three@0.153.0/build/three.module.js";
+import { GLTFLoader } from "https://unpkg.com/three@0.153.0/examples/jsm/loaders/GLTFLoader.js";
+
+const modelInfo = {
+    'ionic': {
+        title: "Ионическая капитель",
+        style: "Архитектурный стиль: Ионический ордер",
+        period: "Исторический период: VI–V века до н. э.",
+        description: "Ионическая капитель отличается волютами."
+    },
+    'dorichescaya': {
+        title: "Дорическая капитель",
+        style: "Архитектурный стиль: Дорический ордер",
+        period: "Исторический период: VII–V века до н. э.",
+        description: "Дорическая капитель — строгая и массивная."
+    }
+};
+
+const modelUrls = {
+    'dorichescaya': 'https://raw.githubusercontent.com/filatowdmitriy-lgtm/arch-models/main/dorichescaya.glb',
+    'ionic': 'https://raw.githubusercontent.com/filatowdmitriy-lgtm/arch-models/main/ionic.glb'
+};
+
+class ModelViewer {
+    constructor() {
+        this.currentModel = null;
+        this.rotation = { x: 0, y: 0 };
+        this.targetRotation = { x: 0, y: 0 };
+        this.cameraDistance = 5;
+        this.minCameraDistance = 2;
+        this.maxCameraDistance = 20;
+        this.mouse = { down: false, button: 0, x: 0, y: 0 };
+        this.touch = { isScaling: false };
+        this.isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+        this.init();
+    }
+
+    init() {
+        const viewer = document.getElementById("viewer");
+
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x0f0f10);
+
+        this.camera = new THREE.PerspectiveCamera(
+            45,
+            viewer.clientWidth / viewer.clientHeight,
+            0.01,
+            2000
+        );
+        this.updateCameraPosition();
+
+        this.renderer = new THREE.WebGLRenderer({
+            canvas: document.getElementById('canvas'),
+            antialias: true,
+            alpha: false
+        });
+        this.renderer.setSize(viewer.clientWidth, viewer.clientHeight);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        this.setupLights();
+        this.setupControls();
+
+        document.querySelectorAll('.model-item').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.model-item').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.loadModel(btn.dataset.model);
+                updateInfo(btn.dataset.model);
+            });
+        });
+
+        this.loadModel("dorichescaya");
+        updateInfo("dorichescaya");
+
+        this.animate();
+    }
+
+    setupLights() {
+        const hemi = new THREE.HemisphereLight(0xffffff, 0x222222, 0.55);
+        const key  = new THREE.DirectionalLight(0xffffff, 1.35);
+        const fill = new THREE.DirectionalLight(0xdde6ff, 0.55);
+        const rim  = new THREE.DirectionalLight(0xffffff, 0.65);
+        const amb  = new THREE.AmbientLight(0xffffff, 0.18);
+
+        key.position.set(4, 8, 6);
+        fill.position.set(-6, 4, 2);
+        rim.position.set(-3, 6, -5);
+
+        key.castShadow = true;
+        key.shadow.mapSize.width = 2048;
+        key.shadow.mapSize.height = 2048;
+
+        this.scene.add(hemi, key, fill, rim, amb);
+    }
+
+    setupControls() {
+        const canvas = document.getElementById("canvas");
+
+        canvas.addEventListener("mousedown", e => {
+            this.mouse.down = true;
+            this.mouse.button = e.button;
+            this.mouse.x = e.clientX;
+            this.mouse.y = e.clientY;
+        });
+
+        canvas.addEventListener("mousemove", e => {
+            if (!this.mouse.down) return;
+            const dx = e.clientX - this.mouse.x;
+            const dy = e.clientY - this.mouse.y;
+
+            if (this.mouse.button === 0) {
+                this.targetRotation.y += dx * -0.008;
+                this.targetRotation.x += dy * 0.008;
+            } else if (this.mouse.button === 2 && this.currentModel) {
+                this.currentModel.position.x += dx * 0.01;
+                this.currentModel.position.y -= dy * 0.01;
             }
 
-            checkMobile() {
-                return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-            }
+            this.mouse.x = e.clientX;
+            this.mouse.y = e.clientY;
+        });
 
-            init() {
-                try {
-                    // Создаем сцену
-                    this.scene = new THREE.Scene();
-                    this.scene.background = new THREE.Color(0xeeeeee);
-                    
-                    // Камера
-                    const canvasContainer = document.getElementById('viewer');
-                    this.camera = new THREE.PerspectiveCamera(75, canvasContainer.clientWidth / canvasContainer.clientHeight, 0.1, 1000);
-                    this.updateCameraPosition();
-                    
-                    // Рендерер
-                    this.renderer = new THREE.WebGLRenderer({ 
-                        canvas: document.getElementById('canvas'),
-                        antialias: true 
-                    });
-                    this.renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
-                    
-                    // УЛУЧШЕННОЕ ОСВЕЩЕНИЕ
-                    this.setupLighting();
-                    
-                    console.log('Three.js инициализирован');
-                    this.updateStatus('Three.js загружен');
-                    
-                    // Настраиваем управление
-                    this.setupControls();
-                    
-                    // Показываем мобильные контролы если нужно
-                    if (this.isMobile) {
-                        document.getElementById('mobileControls').style.display = 'flex';
-                        document.querySelector('.desktop-info').style.display = 'none';
-                        document.querySelector('.mobile-info').style.display = 'block';
-                    }
-                    
-                    // Загружаем первую модель
-                    this.loadModel('dorichescaya');
-                    
-                    // Назначаем обработчики кнопок
-                    document.querySelectorAll('.model-btn').forEach(btn => {
-                        btn.addEventListener('click', () => {
-                            document.querySelectorAll('.model-btn').forEach(b => b.classList.remove('active'));
-                            btn.classList.add('active');
-                            this.loadModel(btn.dataset.model);
-                        });
-                    });
-                    
-                    // Мобильные контролы
-                    document.getElementById('zoomIn').addEventListener('click', () => {
-                        this.cameraDistance = Math.max(this.minCameraDistance, this.cameraDistance - 0.5);
-                        this.updateCameraPosition();
-                    });
-                    
-                    document.getElementById('zoomOut').addEventListener('click', () => {
-                        this.cameraDistance = Math.min(this.maxCameraDistance, this.cameraDistance + 0.5);
-                        this.updateCameraPosition();
-                    });
-                    
-                    document.getElementById('resetView').addEventListener('click', () => {
-                        this.rotation = { x: 0, y: 0 };
-                        this.targetRotation = { x: 0, y: 0 };
-                        this.cameraDistance = 5;
-                        this.updateCameraPosition();
-                    });
-                    
-                    // Анимация
-                    this.animate();
-                    
-                } catch (error) {
-                    console.error('Ошибка инициализации:', error);
-                    this.updateStatus('Ошибка: ' + error.message);
-                }
-            }
-            
-            setupLighting() {
-                // УСИЛЕННОЕ ОСВЕЩЕНИЕ ДЛЯ МОБИЛЬНЫХ
-                const lightIntensity = this.isMobile ? 1.5 : 1.0;
-                
-                // Основной направленный свет
-                const mainLight = new THREE.DirectionalLight(0xffffff, 1.5 * lightIntensity);
-                mainLight.position.set(10, 10, 10);
-                this.scene.add(mainLight);
-                
-                // Заполняющий свет спереди
-                const fillLight = new THREE.DirectionalLight(0xffffff, 1.0 * lightIntensity);
-                fillLight.position.set(-5, 5, 5);
-                this.scene.add(fillLight);
-                
-                // Боковой свет
-                const sideLight = new THREE.DirectionalLight(0xffffff, 0.8 * lightIntensity);
-                sideLight.position.set(0, 10, -10);
-                this.scene.add(sideLight);
-                
-                // Верхний свет
-                const topLight = new THREE.DirectionalLight(0xffffff, 0.6 * lightIntensity);
-                topLight.position.set(0, 10, 0);
-                this.scene.add(topLight);
-                
-                // Окружающее освещение (усилено для мобильных)
-                const ambientLight = new THREE.AmbientLight(0x404040, 1.2 * lightIntensity);
-                this.scene.add(ambientLight);
-                
-                // Мягкий заполняющий свет снизу
-                const bottomLight = new THREE.HemisphereLight(0xffffff, 0x404040, 0.5 * lightIntensity);
-                this.scene.add(bottomLight);
-            }
-            
-            setupControls() {
-                const canvas = document.getElementById('canvas');
-                
-                // ДЕСКТОП: управление мышью
-                canvas.addEventListener('mousedown', (e) => {
-                    this.mouse.down = true;
-                    this.mouse.button = e.button;
-                    this.mouse.x = e.clientX;
-                    this.mouse.y = e.clientY;
-                });
-                
-                canvas.addEventListener('mousemove', (e) => {
-                    if (!this.mouse.down) return;
-                    
-                    const dx = e.clientX - this.mouse.x;
-                    const dy = e.clientY - this.mouse.y;
-                    
-                    if (this.mouse.button === 0) { // ЛКМ - вращение
-                        // ИНВЕРТИРОВАНО ПО ГОРИЗОНТАЛИ: dx * -0.01 вместо dx * 0.01
-                        this.targetRotation.y += dx * -0.01;
-                        this.targetRotation.x += dy * 0.01;
-                    } else if (this.mouse.button === 2) { // ПКМ - панорамирование
-                        if (this.currentModel) {
-                            this.currentModel.position.x += dx * 0.01;
-                            this.currentModel.position.y -= dy * 0.01;
-                        }
-                    }
-                    
-                    this.mouse.x = e.clientX;
-                    this.mouse.y = e.clientY;
-                });
-                
-                canvas.addEventListener('mouseup', () => {
-                    this.mouse.down = false;
-                });
-                
-                canvas.addEventListener('wheel', (e) => {
-                    e.preventDefault();
-                    // ПЛАВНОЕ МАСШТАБИРОВАНИЕ с коэффициентом 0.005 вместо 0.01
-                    const zoomSpeed = 0.005;
-                    this.cameraDistance += e.deltaY * zoomSpeed;
-                    this.cameraDistance = Math.max(this.minCameraDistance, Math.min(this.maxCameraDistance, this.cameraDistance));
-                    this.updateCameraPosition();
-                });
-                
-                // МОБИЛЬНЫЕ: сенсорное управление
-                canvas.addEventListener('touchstart', (e) => {
-                    e.preventDefault();
-                    if (e.touches.length === 1) {
-                        this.touch.startX = e.touches[0].clientX;
-                        this.touch.startY = e.touches[0].clientY;
-                        this.touch.isScaling = false;
-                    } else if (e.touches.length === 2) {
-                        this.touch.isScaling = true;
-                        this.touch.startDistance = Math.hypot(
-                            e.touches[0].clientX - e.touches[1].clientX,
-                            e.touches[0].clientY - e.touches[1].clientY
-                        );
-                    }
-                });
-                
-                canvas.addEventListener('touchmove', (e) => {
-                    e.preventDefault();
-                    
-                    if (e.touches.length === 1 && !this.touch.isScaling) {
-                        // Вращение одним пальцем (ИНВЕРТИРОВАНО ПО ГОРИЗОНТАЛИ)
-                        const dx = e.touches[0].clientX - this.touch.startX;
-                        const dy = e.touches[0].clientY - this.touch.startY;
-                        
-                        this.targetRotation.y += dx * -0.01;
-                        this.targetRotation.x += dy * 0.01;
-                        
-                        this.touch.startX = e.touches[0].clientX;
-                        this.touch.startY = e.touches[0].clientY;
-                    } else if (e.touches.length === 2) {
-                        // Масштабирование двумя пальцами
-                        const distance = Math.hypot(
-                            e.touches[0].clientX - e.touches[1].clientX,
-                            e.touches[0].clientY - e.touches[1].clientY
-                        );
-                        
-                        const scaleChange = distance / this.touch.startDistance;
-                        this.cameraDistance /= scaleChange;
-                        this.cameraDistance = Math.max(this.minCameraDistance, Math.min(this.maxCameraDistance, this.cameraDistance));
-                        this.updateCameraPosition();
-                        
-                        this.touch.startDistance = distance;
-                    }
-                });
-                
-                // Блокируем контекстное меню на канвасе
-                canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-            }
-            
-            updateCameraPosition() {
-                this.camera.position.x = this.cameraDistance * Math.sin(this.rotation.y) * Math.cos(this.rotation.x);
-                this.camera.position.y = this.cameraDistance * Math.sin(this.rotation.x);
-                this.camera.position.z = this.cameraDistance * Math.cos(this.rotation.y) * Math.cos(this.rotation.x);
-                this.camera.lookAt(0, 0, 0);
-            }
-            
-            applyGypsumMaterial(object) {
-                // Создаем материал цвета гипса #5c5c5c (темно-серый)
-                const gypsumMaterial = new THREE.MeshLambertMaterial({
-                    color: 0x5c5c5c, // Темно-серый цвет #5c5c5c
-                    emissive: 0x000000,
-                    emissiveIntensity: 0,
-                    transparent: false,
-                    opacity: 1
-                });
-                
-                // Рекурсивно применяем материал ко всем мешам
-                object.traverse((child) => {
-                    if (child.isMesh) {
-                        child.material = gypsumMaterial;
-                    }
-                });
-            }
-            
-            loadModel(modelName) {
-                console.log('Загрузка модели:', modelName);
-                this.updateStatus('Загрузка ' + modelName + '...');
-                document.getElementById('loading').style.display = 'block';
-                
-                // Удаляем старую модель
-                if (this.currentModel) {
-                    this.scene.remove(this.currentModel);
-                    this.currentModel = null;
-                }
-                
-                const loader = new THREE.GLTFLoader();
-                
-                // РАБОЧИЕ ССЫЛКИ - файлы в корне репозитория
-                const modelUrls = {
-                    'dorichescaya': 'https://raw.githubusercontent.com/filatowdmitriy-lgtm/arch-models/main/dorichescaya.glb',
-                    'ionic': 'https://raw.githubusercontent.com/filatowdmitriy-lgtm/arch-models/main/ionic.glb'
-                };
-                
-                const modelUrl = modelUrls[modelName];
-                console.log('URL модели:', modelUrl);
-                
-                loader.load(
-                    modelUrl,
-                    
-                    // onLoad
-                    (gltf) => {
-                        console.log('Модель успешно загружена:', gltf);
-                        this.currentModel = gltf.scene;
-                        
-                        // ПРИМЕНЯЕМ ГИПСОВЫЙ МАТЕРИАЛ КО ВСЕЙ МОДЕЛИ
-                        this.applyGypsumMaterial(this.currentModel);
-                        
-                        this.scene.add(this.currentModel);
-                        
-                        // ЦЕНТРИРОВАНИЕ МОДЕЛИ
-                        const box = new THREE.Box3().setFromObject(this.currentModel);
-                        const center = box.getCenter(new THREE.Vector3());
-                        const size = box.getSize(new THREE.Vector3());
-                        
-                        console.log('Центр модели:', center);
-                        console.log('Размер модели:', size);
-                        
-                        // Смещаем модель так, чтобы ее центр был в точке (0,0,0)
-                        this.currentModel.position.x = -center.x;
-                        this.currentModel.position.y = -center.y;
-                        this.currentModel.position.z = -center.z;
-                        
-                        // Сбрасываем вращение и позицию камеры
-                        this.rotation = { x: 0, y: 0 };
-                        this.targetRotation = { x: 0, y: 0 };
-                        
-                        // Настраиваем расстояние камеры в зависимости от размера модели
-                        const maxSize = Math.max(size.x, size.y, size.z);
-                        this.cameraDistance = maxSize * 1.5;
-                        
-                        // Устанавливаем ограничения масштабирования на основе размера модели
-                        // УВЕЛИЧЕН МИНИМАЛЬНЫЙ РАССТОЯНИЕ для исключения пересечений
-                        this.minCameraDistance = maxSize * 1.2; // Нельзя подойти ближе чем 120% от размера модели
-                        this.maxCameraDistance = maxSize * 4;   // Нельзя отойти дальше чем 400% от размера модели
-                        
-                        this.updateCameraPosition();
-                        
-                        document.getElementById('loading').style.display = 'none';
-                        this.updateStatus('Модель загружена');
-                        
-                    },
-                    
-                    // onProgress
-                    (progress) => {
-                        if (progress.lengthComputable) {
-                            const percent = progress.loaded / progress.total * 100;
-                            console.log('Прогресс загрузки:', percent + '%');
-                            this.updateStatus('Загрузка: ' + percent.toFixed(1) + '%');
-                        }
-                    },
-                    
-                    // onError
-                    (error) => {
-                        console.error('Ошибка загрузки модели:', error);
-                        document.getElementById('loading').style.display = 'none';
-                        this.updateStatus('Ошибка загрузки модели');
-                    }
-                );
-            }
-            
-            updateStatus(message) {
-                document.getElementById('status').textContent = message;
-                console.log('Status:', message);
-            }
-            
-            animate() {
-                requestAnimationFrame(() => this.animate());
-                
-                // Плавное вращение
-                this.rotation.x += (this.targetRotation.x - this.rotation.x) * 0.1;
-                this.rotation.y += (this.targetRotation.y - this.rotation.y) * 0.1;
-                
-                this.updateCameraPosition();
-                
-                if (this.renderer && this.scene && this.camera) {
-                    this.renderer.render(this.scene, this.camera);
-                }
-            }
-        }
-        
-        // Запускаем когда все загружено
-        window.addEventListener('DOMContentLoaded', () => {
-            console.log('DOM загружен');
-            if (typeof THREE !== 'undefined' && typeof THREE.GLTFLoader !== 'undefined') {
-                console.log('Three.js и GLTFLoader доступны');
-                window.viewer = new ModelViewer();
-            } else {
-                console.error('Three.js не загружен полностью');
-                document.getElementById('status').textContent = 'Ошибка: Three.js не загружен';
+        window.addEventListener("mouseup", () => this.mouse.down = false);
+
+        canvas.addEventListener("wheel", e => {
+            e.preventDefault();
+            this.cameraDistance += e.deltaY * 0.004;
+            this.cameraDistance = Math.min(this.maxCameraDistance, Math.max(this.minCameraDistance, this.cameraDistance));
+            this.updateCameraPosition();
+        }, { passive:false });
+
+        canvas.addEventListener("contextmenu", e => e.preventDefault());
+    }
+
+    updateCameraPosition() {
+        const x = this.cameraDistance * Math.sin(this.rotation.y) * Math.cos(this.rotation.x);
+        const y = this.cameraDistance * Math.sin(this.rotation.x);
+        const z = this.cameraDistance * Math.cos(this.rotation.y) * Math.cos(this.rotation.x);
+        this.camera.position.set(x, y, z);
+        this.camera.lookAt(0, 0, 0);
+    }
+
+    applyMaterial(root) {
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0xcfcfcf,
+            roughness: 0.65,
+            metalness: 0.0
+        });
+
+        root.traverse(c => {
+            if (c.isMesh) {
+                c.material = mat.clone();
+                c.castShadow = true;
+                c.receiveShadow = true;
             }
         });
-        
-        // Обработчик изменения размера окна
-        window.addEventListener('resize', function() {
-            if (window.viewer && window.viewer.renderer && window.viewer.camera) {
-                const canvasContainer = document.getElementById('viewer');
-                window.viewer.camera.aspect = canvasContainer.clientWidth / canvasContainer.clientHeight;
-                window.viewer.camera.updateProjectionMatrix();
-                window.viewer.renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
+    }
+
+    loadModel(name) {
+        document.getElementById("loading").style.display = "flex";
+        document.getElementById("progressBar").style.width = "0%";
+
+        if (this.currentModel) this.scene.remove(this.currentModel);
+
+        const loader = new GLTFLoader();
+        const url = modelUrls[name];
+
+        loader.load(url, gltf => {
+            const root = new THREE.Group();
+            root.add(gltf.scene);
+
+            const box = new THREE.Box3().setFromObject(root);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+
+            gltf.scene.position.sub(center);
+
+            const max = Math.max(size.x, size.y, size.z);
+            const scale = 2 / max;
+            root.scale.set(scale, scale, scale);
+
+            this.cameraDistance = Math.max(2, max * scale * 1.6);
+
+            this.applyMaterial(root);
+            this.currentModel = root;
+            this.scene.add(root);
+
+            this.rotation = { x:0, y:0 };
+            this.targetRotation = { x:0, y:0 };
+            this.updateCameraPosition();
+
+            document.getElementById("loading").style.display = "none";
+
+        }, p => {
+            if (p.lengthComputable) {
+                const percent = (p.loaded / p.total) * 100;
+                document.getElementById("progressBar").style.width = percent + "%";
+                document.getElementById("loadingText").textContent = "Загрузка: " + percent.toFixed(0) + "%";
             }
         });
-    </script>
+    }
+
+    animate() {
+        requestAnimationFrame(() => this.animate());
+
+        this.rotation.x += (this.targetRotation.x - this.rotation.x) * 0.12;
+        this.rotation.y += (this.targetRotation.y - this.rotation.y) * 0.12;
+
+        const maxTilt = Math.PI/2 - 0.05;
+        this.rotation.x = Math.max(-maxTilt, Math.min(maxTilt, this.rotation.x));
+
+        this.updateCameraPosition();
+        this.renderer.render(this.scene, this.camera);
+    }
+}
+
+function updateInfo(name) {
+    const i = modelInfo[name];
+    document.getElementById("model-title").textContent = i.title;
+    document.getElementById("model-style").textContent = i.style;
+    document.getElementById("model-period").textContent = i.period;
+    document.getElementById("model-description").textContent = i.description;
+}
+
+new ModelViewer();
+
+window.addEventListener("resize", () => {
+    const viewer = document.getElementById("viewer");
+    viewer.viewerCamera.aspect = viewer.clientWidth / viewer.clientHeight;
+});
+
+</script>
+
 </body>
 </html>
