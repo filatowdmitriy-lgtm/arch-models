@@ -745,8 +745,14 @@ const sphereRadius = baseRadius;
 // расстояние: полностью помещает сферу в кадр
 let dist = sphereRadius / Math.sin(fovRad / 2);
 
+// Определяем мобильное устройство
+const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+// Разный множитель камеры
+const distanceFactor = isMobile ? 1.8 : 1.25;
+
 // немного воздуха
-dist *= 1.6;
+dist *= distanceFactor;
 state.radius = dist;
 state.targetRadius = dist;
 
