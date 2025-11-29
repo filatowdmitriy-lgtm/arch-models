@@ -118,6 +118,7 @@ import * as THREE from "https://esm.sh/three@0.153.0";
                 this.currentModelName = 'dorichescaya';
 
                 this.currentModel = null;
+                this.cache = {};
                 this.mouse = { x: 0, y: 0, down: false, button: 0 };
                 this.touch = { startX: 0, startY: 0, isScaling: false, startDistance: 0 };
                 this.rotation = { x: 0, y: 0 };
@@ -338,7 +339,23 @@ import * as THREE from "https://esm.sh/three@0.153.0";
                 });
             }
 
-            loadModel(modelName) {
+            
+            setModel(root) {
+                if (this.currentModel) {
+                    this.scene.remove(this.currentModel);
+                }
+                this.currentModel = root;
+                this.scene.add(this.currentModel);
+
+                this.rotation = { x: 0, y: 0 };
+                this.targetRotation = { x: 0, y: 0 };
+                this.updateCameraPosition();
+
+                document.getElementById('loading').style.display = 'none';
+            }
+
+
+loadModel(modelName) {
                 console.log('Загрузка модели:', modelName);
                 this.updateStatus('Загрузка ' + modelName + '...');
                 document.getElementById('loading').style.display = 'flex';
@@ -347,6 +364,14 @@ import * as THREE from "https://esm.sh/three@0.153.0";
                 if (this.currentModel) {
                     this.scene.remove(this.currentModel);
                     this.currentModel = null;
+                }
+
+                // Кэш: если модель уже загружена, используем clone
+                if (this.cache && this.cache[modelName]) {
+                    const cachedRoot = this.cache[modelName].clone(true);
+                    this.setModel(cachedRoot);
+                    this.updateStatus('Модель из кэша');
+                    return;
                 }
 
                 const loader = new GLTFLoader();
@@ -375,14 +400,10 @@ import * as THREE from "https://esm.sh/three@0.153.0";
 
                     this.applyMaterial(root);
 
-                    this.currentModel = root;
-                    this.scene.add(this.currentModel);
+                    // сохраняем в кэш уже подготовленный root
+                    this.cache[modelName] = root.clone(true);
 
-                    this.rotation = { x: 0, y: 0 };
-                    this.targetRotation = { x: 0, y: 0 };
-                    this.updateCameraPosition();
-
-                    document.getElementById('loading').style.display = 'none';
+                    this.setModel(root);
                     this.updateStatus('Модель загружена');
 
                 }, (progress) => {
@@ -400,6 +421,7 @@ import * as THREE from "https://esm.sh/three@0.153.0";
                     this.updateStatus('Ошибка загрузки модели');
                 });
             }
+
 
             updateStatus(message) {
                 const el = document.getElementById('loadingText');
