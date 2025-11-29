@@ -736,23 +736,22 @@
           const sphere = box2.getBoundingSphere(new THREE.Sphere());
           const baseRadius = sphere.radius || base;
 
-// ---------- АВТО-КАМЕРА ДЛЯ МИНИ-ЭПП (идеальный стартовый кадр) ----------
+// ---------- ИДЕАЛЬНАЯ АВТО-КАМЕРА ПО SPHERE-RADIUS ----------
 const fovRad = camera.fov * Math.PI / 180;
 
-// высота объекта после нормализации
-const objHeight = size.y;
+// центр и радиус
+const sphereRadius = boundingSphere.radius;
 
-// дистанция камеры = необходимое расстояние,
-// чтобы объект гарантированно ПОМЕСТИЛСЯ ПО ВЕРТИКАЛИ:
-let dist = (objHeight / 2) / Math.tan(fovRad / 2);
+// расстояние: полностью помещает сферу в кадр
+let dist = sphereRadius / Math.sin(fovRad / 2);
 
-// даём чуть-чуть воздуха (запас)
-dist *= 1.35;
+// немного воздуха
+dist *= 1.25;
 
 // применяем
-state.radius    = dist;       // стартовая дистанция
-state.minRadius = dist * 0.55;
-state.maxRadius = dist * 4.5;
+state.radius    = dist;
+state.minRadius = dist * 0.4;
+state.maxRadius = dist * 6.0;
         }
 
         /* ---------- МАТЕРИАЛ «ГИПС» ---------- */
