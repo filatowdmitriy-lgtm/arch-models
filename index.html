@@ -749,7 +749,7 @@ let dist = sphereRadius / Math.sin(fovRad / 2);
 const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 // Разный множитель камеры
-const distanceFactor = isMobile ? 1.8 : 1.25;
+const distanceFactor = isMobile ? 1.55 : 1;
 
 // немного воздуха
 dist *= distanceFactor;
