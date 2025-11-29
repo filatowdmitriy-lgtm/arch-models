@@ -109,14 +109,12 @@ import * as THREE from "https://esm.sh/three@0.153.0";
         };
 
         const modelUrls = {
-            'dorichescaya': 'https://raw.githubusercontent.com/filatowdmitriy-lgtm/arch-models/main/dorichescaya.glb',
-            'ionic': 'https://raw.githubusercontent.com/filatowdmitriy-lgtm/arch-models/main/ionic.glb'
+            'dorichescaya': 'https://filatowdmitriy-lgtm.github.io/arch-models/dorichescaya.glb',
+            'ionic': 'https://filatowdmitriy-lgtm.github.io/arch-models/ionic.glb'
         };
 
         class ModelViewer {
             constructor() {
-                this.currentModelName = 'dorichescaya';
-
                 this.currentModel = null;
                 this.mouse = { x: 0, y: 0, down: false, button: 0 };
                 this.touch = { startX: 0, startY: 0, isScaling: false, startDistance: 0 };
@@ -168,13 +166,10 @@ import * as THREE from "https://esm.sh/three@0.153.0";
 
                     document.querySelectorAll('.model-item').forEach(btn => {
                         btn.addEventListener('click', () => {
-                            const modelName = btn.dataset.model;
-                            if (this.currentModelName === modelName) return;
-                            this.currentModelName = modelName;
                             document.querySelectorAll('.model-item').forEach(b => b.classList.remove('active'));
                             btn.classList.add('active');
-                            this.loadModel(modelName);
-                            updateInfo(modelName);
+                            this.loadModel(btn.dataset.model);
+                            updateInfo(btn.dataset.model);
                         });
                     });
 
