@@ -115,7 +115,8 @@ import * as THREE from "https://esm.sh/three@0.153.0";
 
         class ModelViewer {
             constructor() {
-        this.currentModelName = null;
+                this.currentButton = null;
+
                 this.currentModel = null;
                 this.mouse = { x: 0, y: 0, down: false, button: 0 };
                 this.touch = { startX: 0, startY: 0, isScaling: false, startDistance: 0 };
@@ -167,6 +168,9 @@ import * as THREE from "https://esm.sh/three@0.153.0";
 
                     document.querySelectorAll('.model-item').forEach(btn => {
                         btn.addEventListener('click', () => {
+                            if (this.currentButton === btn) return;
+                            this.currentButton = btn;
+
                             document.querySelectorAll('.model-item').forEach(b => b.classList.remove('active'));
                             btn.classList.add('active');
                             this.loadModel(btn.dataset.model);
@@ -335,8 +339,6 @@ import * as THREE from "https://esm.sh/three@0.153.0";
             }
 
             loadModel(modelName) {
-        if (this.currentModelName === modelName) return;
-        this.currentModelName = modelName;
                 console.log('Загрузка модели:', modelName);
                 this.updateStatus('Загрузка ' + modelName + '...');
                 document.getElementById('loading').style.display = 'flex';
