@@ -747,9 +747,10 @@ let dist = sphereRadius / Math.sin(fovRad / 2);
 
 // немного воздуха
 dist *= 1.6;
+state.radius = dist;
+state.targetRadius = dist;
 
 // применяем
-state.radius    = dist;
 state.minRadius = dist * 0.4;
 state.maxRadius = dist * 6.0;
         }
