@@ -576,8 +576,8 @@
         lastX = t.clientX;
         lastY = t.clientY;
 
-        state.targetRotY += dx * 0.004;
-        state.targetRotX += dy * 0.004;
+        state.targetRotY += dx * -0.008;
+        state.targetRotX += dy * 0.008;
 
         state.targetRotX = Math.max(
           -Math.PI / 2 + 0.2,
