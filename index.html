@@ -720,9 +720,6 @@
         const box = new THREE.Box3().setFromObject(root);
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
-        // Создаем сферу, чтобы получить корректный радиус модели
-const boundingSphere = new THREE.Sphere();
-box.getBoundingSphere(boundingSphere);
 
         // смещаем модель в (0,0,0)
         gltf.scene.position.sub(center);
@@ -743,7 +740,7 @@ box.getBoundingSphere(boundingSphere);
 const fovRad = camera.fov * Math.PI / 180;
 
 // центр и радиус
-const sphereRadius = boundingSphere.radius;
+const sphereRadius = baseRadius;
 
 // расстояние: полностью помещает сферу в кадр
 let dist = sphereRadius / Math.sin(fovRad / 2);
