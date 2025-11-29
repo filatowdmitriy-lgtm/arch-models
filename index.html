@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Архитектурные капители — 3D Viewer</title>
+  <title>Архитектурные детали — 3D Viewer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <style>
@@ -31,11 +31,12 @@
     .app-header {
       padding: 10px 16px;
       display: flex;
-      align-items: center;
-      justify-content: space-between;
+      align-items: flex-start;
+      justify-content: flex-start;
       background: #050506;
       border-bottom: 1px solid rgba(255, 255, 255, 0.06);
       z-index: 20;
+      flex-shrink: 0;
     }
 
     .app-title {
@@ -49,20 +50,7 @@
     .app-subtitle {
       font-size: 11px;
       color: #666;
-    }
-
-    .app-header-right {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .badge {
-      font-size: 10px;
-      padding: 3px 6px;
-      border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      color: #aaa;
+      margin-top: 2px;
     }
 
     /* ---------- MAIN LAYOUT ---------- */
@@ -73,19 +61,28 @@
       display: flex;
     }
 
-    /* галерея накрывает всё */
+    /* ---------- ГАЛЕРЕЯ ---------- */
     .gallery {
       position: absolute;
       inset: 0;
       padding: 16px;
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
       gap: 14px;
       background: radial-gradient(ellipse at top, #14141a 0%, #050506 55%);
       z-index: 15;
       opacity: 1;
       pointer-events: auto;
       transition: opacity 0.3s ease;
+      align-content: flex-start;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    @media (max-width: 640px) {
+      .gallery {
+        grid-template-columns: minmax(0, 1fr);
+      }
     }
 
     .gallery.hidden {
@@ -104,6 +101,7 @@
       box-shadow: 0 14px 35px rgba(0, 0, 0, 0.5);
       border: 1px solid rgba(255, 255, 255, 0.04);
       transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+      height: auto;
     }
 
     .model-card:hover {
@@ -160,8 +158,10 @@
       position: absolute;
       top: 10px;
       left: 10px;
+      right: 10px;
       z-index: 30;
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       gap: 8px;
     }
@@ -176,6 +176,7 @@
       cursor: pointer;
       user-select: none;
       backdrop-filter: blur(4px);
+      white-space: nowrap;
     }
 
     .btn:active {
@@ -259,38 +260,24 @@
       z-index: 50;
       opacity: 0.9;
     }
-
-    @media (min-width: 768px) {
-      .gallery {
-        padding: 24px 32px;
-        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-      }
-      .model-card {
-        padding: 12px;
-      }
-    }
   </style>
 
-  <!-- ВАЖНО: import map, чтобы 'three' внутри GLTFLoader резолвился -->
+  <!-- importmap -->
   <script type="importmap">
   {
     "imports": {
-      "three": "https://unpkg.com/three@0.153.0/build/three.module.js"
+      "three": "https://unpkg.com/three@0.153.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.153.0/examples/jsm/"
     }
   }
   </script>
 </head>
-
 <body>
 <div class="app-root">
   <header class="app-header">
     <div>
-      <div class="app-title">Архитектурные капители</div>
-      <div class="app-subtitle">Учебный 3D-вьюер для архитектурных факультетов</div>
-    </div>
-    <div class="app-header-right">
-      <div class="badge">Three.js r153</div>
-      <div class="badge">Mini App Ready</div>
+      <div class="app-title">АРХИТЕКТУРНЫЕ ДЕТАЛИ</div>
+      <div class="app-subtitle">Крути-Верти</div>
     </div>
   </header>
 
@@ -302,6 +289,8 @@
     <div class="viewer-wrapper" id="viewerWrapper">
       <div class="viewer-toolbar">
         <button class="btn" id="backBtn">← Галерея</button>
+        <button class="btn" id="prevBtn">← Предыдущая</button>
+        <button class="btn" id="nextBtn">Следующая →</button>
         <div class="model-label" id="modelLabel"></div>
       </div>
 
@@ -309,6 +298,7 @@
         <canvas id="canvas"></canvas>
       </div>
 
+      <!-- LOADING OVERLAY -->
       <div id="loading">
         <div class="loader-ring"></div>
         <div id="loadingText">Загрузка...</div>
@@ -321,11 +311,13 @@
     </div>
   </main>
 </div>
-
 <script type="module">
   import * as THREE from "three";
-  import { GLTFLoader } from "https://unpkg.com/three@0.153.0/examples/jsm/loaders/GLTFLoader.js";
+  import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
+  /* ===============================
+     МОДЕЛИ ДЛЯ ГАЛЕРЕИ
+  =============================== */
   const MODELS = [
     {
       id: "dorichescaya",
@@ -343,9 +335,14 @@
     }
   ];
 
+  /* ===============================
+     DOM ЭЛЕМЕНТЫ
+  =============================== */
   const galleryEl      = document.getElementById("gallery");
   const viewerWrapper  = document.getElementById("viewerWrapper");
   const backBtn        = document.getElementById("backBtn");
+  const prevBtn        = document.getElementById("prevBtn");
+  const nextBtn        = document.getElementById("nextBtn");
   const modelLabelEl   = document.getElementById("modelLabel");
   const loadingEl      = document.getElementById("loading");
   const loadingTextEl  = document.getElementById("loadingText");
@@ -353,22 +350,33 @@
   const statusEl       = document.getElementById("status");
   const canvas         = document.getElementById("canvas");
 
-  let currentModelId = null;
-
   let scene, camera, renderer;
   let currentModel = null;
+  let currentModelId = null;
+
+  /* ===============================
+     КЭШ МОДЕЛЕЙ
+  =============================== */
   const cache = {};
 
+  /* ===============================
+     СОСТОЯНИЕ КАМЕРЫ
+     — фронтальный ракурс
+     — лёгкий подъём (rotX)
+  =============================== */
   const state = {
     radius: 4.5,
     minRadius: 2.0,
     maxRadius: 12.0,
-    rotX: 0.15,
-    rotY: 0.4,
-    targetRotX: 0.15,
-    targetRotY: 0.4
+    rotX: 0.10,       // фронтальный вид — слегка сверху
+    rotY: 0.00,       // строго по центру (важно!)
+    targetRotX: 0.10,
+    targetRotY: 0.00
   };
 
+  /* ===============================
+     ИНИЦИАЛИЗАЦИЯ THREE.JS
+  =============================== */
   initThree();
   buildGallery();
   showGallery();
@@ -377,6 +385,7 @@
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x050506);
 
+    /* ---------- КАМЕРА ---------- */
     camera = new THREE.PerspectiveCamera(
       40,
       window.innerWidth / window.innerHeight,
@@ -385,6 +394,7 @@
     );
     updateCameraPosition();
 
+    /* ---------- РЕНДЕРЕР ---------- */
     renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
@@ -392,32 +402,67 @@
     });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x111111, 0.9);
-    scene.add(hemi);
+    /* =============================================
+       СТУДИЙНОЕ ОСВЕЩЕНИЕ (1-в-1 как в стабильной)
+    ============================================== */
 
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-    dir.position.set(3, 5, 4);
-    scene.add(dir);
+// 1) Верхний мягкий полутон — чуть холодный
+const zenith = new THREE.DirectionalLight(0xf5f8ff, 0.0);
+zenith.position.set(0, 11, 2);
+scene.add(zenith);
 
+// 2) Главный KEY — тёплый, мощный, выразительный
+const key = new THREE.DirectionalLight(0xffc4a0, 1.85);
+key.position.set(5.5, 6.0, 3.5);
+key.castShadow = false;  // можно включить, если хочешь сильные тени
+scene.add(key);
+
+// 3) Глубокий холодный SHADOW FILL (минимальный)
+const fill = new THREE.DirectionalLight(0xcad8ff, 0.35);
+fill.position.set(-7, 3.5, 2);
+scene.add(fill);
+
+// 4) Главный RIM — белый, сильный, даёт “подсветку контура”
+const rim = new THREE.DirectionalLight(0xffffff, 0.5);
+rim.position.set(-3.5, 5, -7.5);
+scene.add(rim);
+
+// 5) Второй rim (очень холодный, узкий)
+const rimCold = new THREE.DirectionalLight(0xd8e4ff, 0.1);
+rimCold.position.set(2.5, 3.5, -5);
+scene.add(rimCold);
+
+
+// 7) Ambient — минимальный, почти незаметный
+const ambient = new THREE.AmbientLight(0xffffff, 0.04);
+scene.add(ambient);
+
+// 8) Hemisphere — микро-подсветка, создаёт “ореол”
+const hemi = new THREE.HemisphereLight(0xffffff, 0x0a0a0a, 0.07);
+scene.add(hemi);
+
+    /* ---------- АДАПТАЦИЯ ПРИ РЕЗАЙЗЕ ---------- */
     window.addEventListener("resize", onWindowResize);
 
+    /* ---------- УПРАВЛЕНИЕ (ОРБИТЫ) ---------- */
     initControls();
 
+    /* ---------- ГЛАВНЫЙ РЕНДЕР-ЦИКЛ ---------- */
     renderer.setAnimationLoop(() => {
       state.rotX += (state.targetRotX - state.rotX) * 0.12;
       state.rotY += (state.targetRotY - state.rotY) * 0.12;
+
       updateCameraPosition();
       renderer.render(scene, camera);
     });
   }
 
-  function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  }
-
+  /* ===============================
+     ПЕРЕСЧЁТ ПОЗИЦИИ КАМЕРЫ
+  =============================== */
   function updateCameraPosition() {
     const r = state.radius;
     const x = r * Math.sin(state.rotY) * Math.cos(state.rotX);
@@ -428,13 +473,25 @@
     camera.lookAt(0, 0, 0);
   }
 
+  /* ===============================
+     РЕАКЦИЯ НА РЕЗАЙЗ
+  =============================== */
+  function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  /* ===============================
+     УПРАВЛЕНИЕ МЫШЬЮ + ТАЧЕМ
+  =============================== */
   function initControls() {
     let isDragging = false;
-    let lastX = 0;
-    let lastY = 0;
+    let lastX = 0, lastY = 0;
     let touchMode = null;
     let lastPinchDist = 0;
 
+    /* ----- МЫШЬ ----- */
     canvas.addEventListener("mousedown", (e) => {
       isDragging = true;
       lastX = e.clientX;
@@ -447,19 +504,27 @@
 
     window.addEventListener("mousemove", (e) => {
       if (!isDragging) return;
+
       const dx = e.clientX - lastX;
       const dy = e.clientY - lastY;
+
       lastX = e.clientX;
       lastY = e.clientY;
 
-      state.targetRotY += dx * 0.005;
+      state.targetRotY += dx * -0.005;
       state.targetRotX += dy * 0.005;
-      state.targetRotX = Math.max(-Math.PI / 2 + 0.2, Math.min(Math.PI / 2 - 0.2, state.targetRotX));
+
+      state.targetRotX = Math.max(
+        -Math.PI / 2 + 0.2,
+        Math.min(Math.PI / 2 - 0.2, state.targetRotX)
+      );
     });
 
+    /* ----- ЗУМ КОЛЕСОМ ----- */
     canvas.addEventListener("wheel", (e) => {
       e.preventDefault();
       const delta = e.deltaY * 0.002;
+
       state.radius = THREE.MathUtils.clamp(
         state.radius + delta,
         state.minRadius,
@@ -467,6 +532,7 @@
       );
     }, { passive: false });
 
+    /* ----- ТАЧ УПРАВЛЕНИЕ ----- */
     canvas.addEventListener("touchstart", (e) => {
       if (e.touches.length === 1) {
         touchMode = "rotate";
@@ -485,15 +551,23 @@
         const t = e.touches[0];
         const dx = t.clientX - lastX;
         const dy = t.clientY - lastY;
+
         lastX = t.clientX;
         lastY = t.clientY;
 
         state.targetRotY += dx * 0.004;
         state.targetRotX += dy * 0.004;
-        state.targetRotX = Math.max(-Math.PI / 2 + 0.2, Math.min(Math.PI / 2 - 0.2, state.targetRotX));
-      } else if (touchMode === "zoom" && e.touches.length === 2) {
+
+        state.targetRotX = Math.max(
+          -Math.PI / 2 + 0.2,
+          Math.min(Math.PI / 2 - 0.2, state.targetRotX)
+        );
+      }
+
+      else if (touchMode === "zoom" && e.touches.length === 2) {
         const dist = pinchDistance(e.touches[0], e.touches[1]);
         const delta = (lastPinchDist - dist) * 0.01;
+
         lastPinchDist = dist;
 
         state.radius = THREE.MathUtils.clamp(
@@ -515,120 +589,12 @@
     }
   }
 
-  function loadModel(modelId) {
-    const m = MODELS.find((x) => x.id === modelId);
-    if (!m) return;
-
-    currentModelId = modelId;
-
-    showLoading("Загрузка…", 0);
-    setStatus("Загрузка: " + m.name);
-
-    if (cache[m.id]) {
-      const clone = cache[m.id].clone(true);
-      setModel(clone);
-      hideLoading();
-      setStatus("Модель из кэша: " + m.name);
-      return;
-    }
-
-    const loader = new GLTFLoader();
-    loader.load(
-      m.url,
-      (gltf) => {
-        const root = new THREE.Group();
-        root.add(gltf.scene);
-
-        const box = new THREE.Box3().setFromObject(root);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-
-        root.position.sub(center);
-
-        const maxAxis = Math.max(size.x, size.y, size.z);
-        if (maxAxis > 0) {
-          const targetSize = 2.2;
-          const scale = targetSize / maxAxis;
-          root.scale.setScalar(scale);
-
-          state.radius = 4.5;
-          state.minRadius = 2.0;
-          state.maxRadius = 10.0;
-        }
-
-        applyPlasterMaterial(root);
-
-        cache[m.id] = root.clone(true);
-        setModel(root);
-        hideLoading();
-        setStatus("Модель загружена: " + m.name);
-      },
-      (xhr) => {
-        if (xhr.lengthComputable) {
-          const percent = (xhr.loaded / xhr.total) * 100;
-          showLoading("Загрузка: " + percent.toFixed(0) + "%", percent);
-        } else {
-          showLoading("Загрузка…", null);
-        }
-      },
-      (err) => {
-        console.error("Ошибка загрузки модели:", err);
-        hideLoading();
-        setStatus("Ошибка загрузки модели");
-        alert("Ошибка загрузки модели.");
-      }
-    );
-  }
-
-  function setModel(root) {
-    if (currentModel) {
-      scene.remove(currentModel);
-    }
-    currentModel = root;
-    scene.add(currentModel);
-
-    state.targetRotX = 0.15;
-    state.targetRotY = 0.4;
-  }
-
-  function applyPlasterMaterial(root) {
-    const plaster = new THREE.MeshPhysicalMaterial({
-      color: 0xf5f5f5,
-      roughness: 0.8,
-      metalness: 0.0,
-      sheen: 0.1,
-      clearcoat: 0.05
-    });
-
-    root.traverse((obj) => {
-      if (obj.isMesh) {
-        obj.material = plaster;
-        obj.castShadow = false;
-        obj.receiveShadow = false;
-      }
-    });
-  }
-
-  function showLoading(text, percent) {
-    loadingEl.style.display = "flex";
-    loadingTextEl.textContent = text;
-    if (typeof percent === "number") {
-      progressBarEl.style.width = percent.toFixed(0) + "%";
-    } else {
-      progressBarEl.style.width = "15%";
-    }
-  }
-
-  function hideLoading() {
-    loadingEl.style.display = "none";
-  }
-
-  function setStatus(text) {
-    statusEl.textContent = text || "";
-  }
-
+  /* ===============================
+     ГАЛЕРЕЯ
+  =============================== */
   function buildGallery() {
     galleryEl.innerHTML = "";
+
     MODELS.forEach((m) => {
       const card = document.createElement("div");
       card.className = "model-card";
@@ -669,16 +635,182 @@
     if (!m) return;
 
     modelLabelEl.textContent = m.name;
+
     galleryEl.classList.add("hidden");
     viewerWrapper.classList.add("visible");
 
     loadModel(modelId);
   }
 
-  backBtn.addEventListener("click", () => {
-    showGallery();
+  function getModelIndex(id) {
+    return MODELS.findIndex((m) => m.id === id);
+  }
+
+  backBtn.addEventListener("click", showGallery);
+
+  nextBtn.addEventListener("click", () => {
+    if (!currentModelId) {
+      openViewerForModel(MODELS[0].id);
+      return;
+    }
+    let idx = getModelIndex(currentModelId);
+    idx = (idx + 1) % MODELS.length;
+    openViewerForModel(MODELS[idx].id);
   });
 
+  prevBtn.addEventListener("click", () => {
+    if (!currentModelId) {
+      openViewerForModel(MODELS[0].id);
+      return;
+    }
+    let idx = getModelIndex(currentModelId);
+    idx = (idx - 1 + MODELS.length) % MODELS.length;
+    openViewerForModel(MODELS[idx].id);
+  });
+  /* ===============================
+     ЗАГРУЗКА МОДЕЛИ (pivot + кэш)
+  =============================== */
+  function loadModel(modelId) {
+    const m = MODELS.find((x) => x.id === modelId);
+    if (!m) return;
+
+    currentModelId = modelId;
+    showLoading("Загрузка…", 0);
+    setStatus("Загрузка: " + m.name);
+
+    /* --- КЭШ --- */
+    if (cache[m.id]) {
+      const clone = cache[m.id].clone(true);
+      setModel(clone);
+      hideLoading();
+      setStatus("Модель из кэша: " + m.name);
+      return;
+    }
+
+    /* --- ЗАГРУЗЧИК --- */
+    const loader = new GLTFLoader();
+
+    loader.load(
+      m.url,
+      (gltf) => {
+        const root = new THREE.Group();
+        root.add(gltf.scene);
+
+        /* ---------- PIVOT ---------- */
+        const box = new THREE.Box3().setFromObject(root);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+
+        // смещаем модель в (0,0,0)
+        gltf.scene.position.sub(center);
+
+        /* ---------- МАСШТАБ ---------- */
+        const maxSize = Math.max(size.x, size.y, size.z);
+        if (maxSize > 0) {
+          const base = 2.0;               // целевой визуальный размер
+          const scale = base / maxSize;
+          root.scale.setScalar(scale);
+
+          // пересчёт bounding sphere после масштаба
+          const box2 = new THREE.Box3().setFromObject(root);
+          const sphere = box2.getBoundingSphere(new THREE.Sphere());
+          const baseRadius = sphere.radius || base;
+
+          // Настройки камеры (как в стабильной)
+          state.radius    = Math.max(2.0, baseRadius * 3.0);
+          state.minRadius = Math.max(1.2, baseRadius * 1.5);
+          state.maxRadius = Math.max(6.0, baseRadius * 6.0);
+        }
+
+        /* ---------- МАТЕРИАЛ «ГИПС» ---------- */
+        applyPlasterMaterial(root);
+
+        /* ---------- КЭШИРУЕМ ---------- */
+        cache[m.id] = root.clone(true);
+
+        /* ---------- ПОКАЗЫВАЕМ МОДЕЛЬ ---------- */
+        setModel(root);
+
+        hideLoading();
+        setStatus("Модель загружена: " + m.name);
+      },
+
+      /* --- ПРОГРЕСС --- */
+      (xhr) => {
+        if (xhr.lengthComputable) {
+          const percent = (xhr.loaded / xhr.total) * 100;
+          showLoading("Загрузка: " + percent.toFixed(0) + "%", percent);
+        } else {
+          showLoading("Загрузка…", null);
+        }
+      },
+
+      /* --- ОШИБКА --- */
+      (err) => {
+        console.error("Ошибка загрузки модели:", err);
+        hideLoading();
+        setStatus("Ошибка загрузки модели");
+        alert("Ошибка загрузки модели.");
+      }
+    );
+  }
+
+  /* ===============================
+     УСТАНОВКА МОДЕЛИ В СЦЕНУ
+  =============================== */
+  function setModel(root) {
+    if (currentModel) {
+      scene.remove(currentModel);
+    }
+    currentModel = root;
+    scene.add(currentModel);
+
+    // фронтальный ракурс
+    state.targetRotX = 0.10;
+    state.targetRotY = 0.00;
+  }
+
+  /* ===============================
+     МАТЕРИАЛ — «ГИПС»
+  =============================== */
+  function applyPlasterMaterial(root) {
+    const plaster = new THREE.MeshPhysicalMaterial({
+      color: 0xf5f5f5,
+      roughness: 0.8,
+      metalness: 0.0,
+      sheen: 0.1,
+      clearcoat: 0.05
+    });
+
+    root.traverse((obj) => {
+      if (obj.isMesh) {
+        obj.material = plaster;
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+      }
+    });
+  }
+
+  /* ===============================
+     LOADING UI
+  =============================== */
+  function showLoading(text, percent) {
+    loadingEl.style.display = "flex";
+    loadingTextEl.textContent = text;
+    if (typeof percent === "number") {
+      progressBarEl.style.width = percent.toFixed(0) + "%";
+    } else {
+      progressBarEl.style.width = "15%";
+    }
+  }
+
+  function hideLoading() {
+    loadingEl.style.display = "none";
+  }
+
+  function setStatus(text) {
+    statusEl.textContent = text || "";
+  }
 </script>
 </body>
 </html>
