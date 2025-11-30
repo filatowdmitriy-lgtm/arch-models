@@ -805,7 +805,10 @@ state.maxRadius = dist * 6.0;
         }
 
         /* ---------- МАТЕРИАЛ «ГИПС» ---------- */
-        applyPlasterMaterial(root);
+       if (m.id !== "doric") {
+    applyPlasterMaterial(root);
+}
+
 
         /* ---------- КЭШИРУЕМ ---------- */
         cache[m.id] = root.clone(true);
