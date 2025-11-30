@@ -345,7 +345,7 @@
       id: "dorichescaya",
       name: "Дорическая капитель",
       desc: "Архаический строгий стиль.",
-      url: "https://filatowdmitriy-lgtm.github.io/arch-models/dorichescaya.glb",
+      url: "https://filatowdmitriy-lgtm.github.io/arch-models/models/doric.gltf",
       thumbLetter: "D"
     },
     {
@@ -721,6 +721,43 @@
       (gltf) => {
         const root = new THREE.Group();
         root.add(gltf.scene);
+        
+        // --- PBR материалы только для дорической капители ---
+if (m.id === "doric") {
+
+    const texBase = new THREE.TextureLoader().load(
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/BaseColor.jpg"
+    );
+
+    const texNormal = new THREE.TextureLoader().load(
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Normal.jpg"
+    );
+
+    const texRough = new THREE.TextureLoader().load(
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg"
+    );
+
+    const mat = new THREE.MeshStandardMaterial({
+        map: texBase,
+        normalMap: texNormal,
+        roughnessMap: texRough,
+
+        metalness: 0.0,
+        roughness: 1.0,
+
+        envMapIntensity: 0.7,
+    });
+
+    // Применяем материал ко ВСЕМ Mesh внутри модели
+    root.traverse((obj) => {
+        if (obj.isMesh) {
+            obj.material = mat;
+            obj.castShadow = false;
+            obj.receiveShadow = false;
+        }
+    });
+}
+
 
         /* ---------- PIVOT ---------- */
         const box = new THREE.Box3().setFromObject(root);
