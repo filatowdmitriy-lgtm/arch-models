@@ -1304,7 +1304,7 @@
     "buffers": [
         {
             "byteLength": 23616832,
-            "uri": "doricheskaya.bin"
+            "uri": "doric.bin"
         }
     ],
     "bufferViews": [
@@ -2515,4 +2515,5 @@
         }
     ],
     "scene": 0
+
 }
