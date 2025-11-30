@@ -737,6 +737,16 @@ if (m.id === "doric") {
         "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg"
     );
 
+      // ВАЖНО: для glTF-модели переворачиваем Y, иначе выглядит как «битая UV»
+    texBase.flipY = false;
+    texNormal.flipY = false;
+    texRough.flipY = false;
+
+    // Корректные цветовые пространства
+    texBase.colorSpace   = THREE.SRGBColorSpace;
+    texNormal.colorSpace = THREE.LinearSRGBColorSpace;
+    texRough.colorSpace  = THREE.LinearSRGBColorSpace;
+
     const mat = new THREE.MeshStandardMaterial({
         map: texBase,
         normalMap: texNormal,
