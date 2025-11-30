@@ -471,8 +471,8 @@
 
     /* ---------- ГЛАВНЫЙ РЕНДЕР-ЦИКЛ ---------- */
     renderer.setAnimationLoop(() => {
-      state.rotX += (state.targetRotX - state.rotX) * 0.32;
-      state.rotY += (state.targetRotY - state.rotY) * 0.32; 
+      state.rotX += (state.targetRotX - state.rotX) * 0.22;
+      state.rotY += (state.targetRotY - state.rotY) * 0.22; 
 
       updateCameraPosition();
       renderer.render(scene, camera);
