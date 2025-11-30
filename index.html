@@ -430,6 +430,11 @@
     /* ---------- СТУДИЙНОЕ ОСВЕЩЕНИЕ ---------- */
 
 
+    // 1) Верхний мягкий полутон — чуть холодный
+    const zenith = new THREE.DirectionalLight(0xf5f8ff, 0.0);
+    zenith.position.set(0, 11, 2);
+    scene.add(zenith);
+
     // 2) Главный KEY — тёплый, мощный, выразительный
     const key = new THREE.DirectionalLight(0xffc4a0, 1.85);
     key.position.set(5.5, 6.0, 3.5);
@@ -440,6 +445,25 @@
     const fill = new THREE.DirectionalLight(0xcad8ff, 0.35);
     fill.position.set(-7, 3.5, 2);
     scene.add(fill);
+
+    // 4) Главный RIM — белый, сильный, даёт “подсветку контура”
+    const rim = new THREE.DirectionalLight(0xffffff, 0.5);
+    rim.position.set(-3.5, 5, -7.5);
+    scene.add(rim);
+
+    // 5) Второй rim (очень холодный, узкий)
+    const rimCold = new THREE.DirectionalLight(0xd8e4ff, 0.1);
+    rimCold.position.set(2.5, 3.5, -5);
+    scene.add(rimCold);
+
+    // 7) Ambient — минимальный, почти незаметный
+    const ambient = new THREE.AmbientLight(0xffffff, 0.04);
+    scene.add(ambient);
+
+    // 8) Hemisphere — микро-подсветка, создаёт “ореол”
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x0a0a0a, 0.07);
+    scene.add(hemi);
+
 
     
 
