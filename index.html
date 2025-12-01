@@ -722,27 +722,25 @@
         const root = new THREE.Group();
         root.add(gltf.scene);
         
-        // --- PBR материалы только для дорической капители ---
+        /* --- PBR материалы --- */
+
+// ===== ДОРИЧЕСКАЯ =====
 if (m.id === "doric") {
 
     const texBase = new THREE.TextureLoader().load(
         "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/BaseColor.jpg"
     );
-
     const texNormal = new THREE.TextureLoader().load(
         "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Normal.jpg"
     );
-
     const texRough = new THREE.TextureLoader().load(
         "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg"
     );
 
-      // ВАЖНО: для glTF-модели переворачиваем Y, иначе выглядит как «битая UV»
     texBase.flipY = false;
     texNormal.flipY = false;
     texRough.flipY = false;
 
-    // Корректные цветовые пространства
     texBase.colorSpace   = THREE.SRGBColorSpace;
     texNormal.colorSpace = THREE.LinearSRGBColorSpace;
     texRough.colorSpace  = THREE.LinearSRGBColorSpace;
@@ -751,48 +749,11 @@ if (m.id === "doric") {
         map: texBase,
         normalMap: texNormal,
         roughnessMap: texRough,
-
         metalness: 0.0,
         roughness: 1.0,
-
         envMapIntensity: 0.7,
     });
 
-/* --- PBR материал для ионической капители --- */
-if (m.id === "ionic") {
-
-    const texBase = new THREE.TextureLoader().load(
-        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/BaseColor.jpg"
-    );
-
-    const texNormal = new THREE.TextureLoader().load(
-        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Normal.jpg"
-    );
-
-    const texRough = new THREE.TextureLoader().load(
-        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg"
-    );
-
-    // glTF → flipY = false
-    texBase.flipY = false;
-    texNormal.flipY = false;
-    texRough.flipY = false;
-
-    // Цветовые пространства
-    texBase.colorSpace   = THREE.SRGBColorSpace;
-    texNormal.colorSpace = THREE.LinearSRGBColorSpace;
-    texRough.colorSpace  = THREE.LinearSRGBColorSpace;
-
-    const mat = new THREE.MeshStandardMaterial({
-        map:         texBase,
-        normalMap:   texNormal,
-        roughnessMap: texRough,
-        metalness:   0.0,
-        roughness:   1.0,
-        envMapIntensity: 0.75,
-    });
-
-    // ОДИН traverse, который реально всё делает
     root.traverse((obj) => {
         if (obj.isMesh) {
             obj.material = mat;
@@ -801,6 +762,47 @@ if (m.id === "ionic") {
         }
     });
 }
+
+
+// ===== ИОНИЧЕСКАЯ =====
+if (m.id === "ionic") {
+
+    const texBase = new THREE.TextureLoader().load(
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/BaseColor.jpg"
+    );
+    const texNormal = new THREE.TextureLoader().load(
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Normal.jpg"
+    );
+    const texRough = new THREE.TextureLoader().load(
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg"
+    );
+
+    texBase.flipY = false;
+    texNormal.flipY = false;
+    texRough.flipY = false;
+
+    texBase.colorSpace   = THREE.SRGBColorSpace;
+    texNormal.colorSpace = THREE.LinearSRGBColorSpace;
+    texRough.colorSpace  = THREE.LinearSRGBColorSpace;
+
+    const mat = new THREE.MeshStandardMaterial({
+        map: texBase,
+        normalMap: texNormal,
+        roughnessMap: texRough,
+        metalness: 0.0,
+        roughness: 1.0,
+        envMapIntensity: 0.75,
+    });
+
+    root.traverse((obj) => {
+        if (obj.isMesh) {
+            obj.material = mat;
+            obj.castShadow = false;
+            obj.receiveShadow = false;
+        }
+    });
+}
+
 
         /* ---------- PIVOT ---------- */
         const box = new THREE.Box3().setFromObject(root);
