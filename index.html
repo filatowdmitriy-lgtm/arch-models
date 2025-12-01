@@ -790,12 +790,6 @@ if (m.id === "ionic") {
         envMapIntensity: 0.75,
     });
 
-    root.traverse((obj) => {
-        if (obj.isMesh) {
-            obj.material = mat;
-        }
-    });
-}
 
 
     // Применяем материал ко ВСЕМ Mesh внутри модели
