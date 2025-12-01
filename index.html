@@ -3,10 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <title>Архитектурные детали — 3D Viewer</title>
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
-  />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 
   <style>
     * {
@@ -164,6 +162,7 @@
       pointer-events: auto;
     }
 
+    /* ---------- TOOLBAR + TABS ---------- */
     .viewer-toolbar {
       position: absolute;
       top: 10px;
@@ -171,64 +170,121 @@
       right: 10px;
       z-index: 30;
       display: flex;
-      flex-wrap: wrap;
-      align-items: center;
+      flex-direction: column;
       gap: 8px;
+      pointer-events: auto;
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+
+    .viewer-toolbar-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .viewer-toolbar-row-top {
+      justify-content: space-between;
+      flex-wrap: nowrap;
+    }
+
+    .viewer-nav {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .viewer-tabs-row {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+    }
+
+    .viewer-tabs {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 6px;
+      width: 100%;
+      max-width: 480px;
+      margin: 0 auto;
+      justify-content: center;
     }
 
     .btn {
       background: rgba(0, 0, 0, 0.6);
       color: #f5f5f5;
       border-radius: 999px;
-      padding: 8px 14px;
+      padding: 8px 12px;
       font-size: 13px;
-      border: 1px solid rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.1);
       cursor: pointer;
       user-select: none;
       backdrop-filter: blur(4px);
       white-space: nowrap;
-      line-height: 1.1;
+      line-height: 1.2;
     }
 
     .btn:active {
       transform: translateY(1px);
     }
 
+    .nav-btn {
+      min-width: 0;
+    }
+
     .model-label {
       font-size: 13px;
       color: #b7b7c0;
-      max-width: 220px;
-      margin-left: auto;
+      max-width: 260px;
       text-align: right;
     }
 
-    /* вкладки 3D / схема / видео */
-    .viewer-tabs {
-      display: flex;
-      flex: 1;
-      justify-content: center;
-      gap: 6px;
-    }
-
     .tab-btn {
-      padding: 7px 14px;
+      padding: 7px 10px;
       font-size: 12px;
       border-radius: 999px;
       opacity: 0.9;
-      position: relative;
-      overflow: hidden;
+      flex: 1 1 0;
+      min-width: 0;
+      text-align: center;
     }
 
     .tab-btn.active {
       background: linear-gradient(90deg, #ffffff, #8888ff);
       color: #050506;
       border-color: transparent;
-      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6) inset;
     }
 
     .tab-btn.disabled {
       opacity: 0.25;
       pointer-events: none;
+    }
+
+    @media (max-width: 640px) {
+      .viewer-toolbar-row-top {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .viewer-nav {
+        justify-content: space-between;
+      }
+
+      .nav-btn {
+        flex: 1 1 calc(33.33% - 6px);
+        text-align: center;
+      }
+
+      .model-label {
+        text-align: left;
+        max-width: none;
+      }
+    }
+
+    /* скрыто UI (при большом зуме схемы) */
+    .ui-hidden {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-8px);
     }
 
     .viewer-main {
@@ -255,7 +311,6 @@
       background: radial-gradient(circle at top, #050506 0%, #020203 60%);
       z-index: 25;
       touch-action: none;
-      overflow: hidden;
     }
 
     /* Схема: картинка управляется только через JS */
@@ -273,7 +328,7 @@
       display: block;
     }
 
-    /* Схема: выше канваса, ниже тулбара, кнопки не перекрывает */
+    /* Схема: выше канваса, ниже тулбара */
     #schemeOverlay {
       z-index: 20 !important;
       pointer-events: auto;
@@ -294,7 +349,7 @@
       align-items: center;
       justify-content: center;
       flex-direction: column;
-      background: radial-gradient(circle at top, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.96));
+      background: radial-gradient(circle at top, rgba(0,0,0,0.85), rgba(0,0,0,0.96));
       z-index: 40;
     }
 
@@ -345,6 +400,7 @@
       color: #7f7f86;
       z-index: 50;
       opacity: 0.9;
+      transition: opacity 0.25s ease, transform 0.25s ease;
     }
   </style>
 
@@ -386,18 +442,22 @@
     <!-- ВЬЮЕР -->
     <div class="viewer-wrapper" id="viewerWrapper">
       <div class="viewer-toolbar">
-        <button class="btn" id="backBtn">← Галерея</button>
-        <button class="btn" id="prevBtn">← Предыдущая</button>
-        <button class="btn" id="nextBtn">Следующая →</button>
-
-        <!-- вкладки режима просмотра -->
-        <div class="viewer-tabs">
-          <button class="btn tab-btn active" id="tab3d">3D просмотр</button>
-          <button class="btn tab-btn" id="tabScheme">Схема построения</button>
-          <button class="btn tab-btn" id="tabVideo">Видео</button>
+        <div class="viewer-toolbar-row viewer-toolbar-row-top">
+          <div class="viewer-nav">
+            <button class="btn nav-btn" id="backBtn">← Галерея</button>
+            <button class="btn nav-btn" id="prevBtn">← Предыдущая</button>
+            <button class="btn nav-btn" id="nextBtn">Следующая →</button>
+          </div>
+          <div class="model-label" id="modelLabel"></div>
         </div>
 
-        <div class="model-label" id="modelLabel"></div>
+        <div class="viewer-toolbar-row viewer-tabs-row">
+          <div class="viewer-tabs">
+            <button class="btn tab-btn active" id="tab3d">3D просмотр</button>
+            <button class="btn tab-btn" id="tabScheme">Схема построения</button>
+            <button class="btn tab-btn" id="tabVideo">Видео</button>
+          </div>
+        </div>
       </div>
 
       <div class="viewer-main">
@@ -461,6 +521,7 @@
   =============================== */
   const galleryEl      = document.getElementById("gallery");
   const viewerWrapper  = document.getElementById("viewerWrapper");
+  const viewerToolbar  = document.querySelector(".viewer-toolbar");
   const backBtn        = document.getElementById("backBtn");
   const prevBtn        = document.getElementById("prevBtn");
   const nextBtn        = document.getElementById("nextBtn");
@@ -505,9 +566,8 @@
   /* ===============================
      СХЕМА: ПАРАМЕТРЫ ZOOM/PAN
   =============================== */
-  let schemeScale = 1;        // пользовательский множитель (1–4)
-  let schemeBaseScale = 1;    // fit-to-screen масштаб
-  let schemeTx = 0;           // смещение от центра
+  let schemeScale = 1;
+  let schemeTx = 0; // смещение от центра
   let schemeTy = 0;
   let schemeActiveIndex = 0;
 
@@ -521,6 +581,10 @@
   let schemeStartY = 0;
   let schemeEndX = 0;
   let schemeEndY = 0;
+
+  /* UI авто-хайд при зуме схемы */
+  let uiHiddenByZoom = false;
+  let uiTempShowTimeout = null;
 
   /* ===============================
      ИНИЦИАЛИЗАЦИЯ THREE.JS
@@ -608,11 +672,6 @@
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
-
-    // при смене размера пересчитаем fit-to-screen для схемы
-    if (activeView === "scheme") {
-      resetSchemeTransform();
-    }
   }
 
   /* ===============================
@@ -696,7 +755,7 @@
         );
       } else if (touchMode === "zoom" && e.touches.length === 2) {
         const dist = pinchDistance(e.touches[0], e.touches[1]);
-        const delta = (dist - lastPinchDist) * 0.01;
+        const delta = (lastPinchDist - dist) * 0.01;
 
         lastPinchDist = dist;
 
@@ -840,15 +899,14 @@
 
         // ===== ДОРИЧЕСКАЯ =====
         if (m.id === "doric") {
-
           const texBase = new THREE.TextureLoader().load(
-              "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/BaseColor.jpg"
+            "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/BaseColor.jpg"
           );
           const texNormal = new THREE.TextureLoader().load(
-              "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Normal.jpg"
+            "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Normal.jpg"
           );
           const texRough = new THREE.TextureLoader().load(
-              "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg"
+            "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg"
           );
 
           texBase.flipY = false;
@@ -860,34 +918,33 @@
           texRough.colorSpace  = THREE.LinearSRGBColorSpace;
 
           const mat = new THREE.MeshStandardMaterial({
-              map: texBase,
-              normalMap: texNormal,
-              roughnessMap: texRough,
-              metalness: 0.0,
-              roughness: 1.0,
-              envMapIntensity: 0.7,
+            map: texBase,
+            normalMap: texNormal,
+            roughnessMap: texRough,
+            metalness: 0.0,
+            roughness: 1.0,
+            envMapIntensity: 0.7,
           });
 
           root.traverse((obj) => {
-              if (obj.isMesh) {
-                  obj.material = mat;
-                  obj.castShadow = false;
-                  obj.receiveShadow = false;
-              }
+            if (obj.isMesh) {
+              obj.material = mat;
+              obj.castShadow = false;
+              obj.receiveShadow = false;
+            }
           });
         }
 
         // ===== ИОНИЧЕСКАЯ =====
         if (m.id === "ionic") {
-
           const texBase = new THREE.TextureLoader().load(
-              "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/BaseColor.jpg"
+            "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/BaseColor.jpg"
           );
           const texNormal = new THREE.TextureLoader().load(
-              "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Normal.jpg"
+            "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Normal.jpg"
           );
           const texRough = new THREE.TextureLoader().load(
-              "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg"
+            "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg"
           );
 
           texBase.flipY = false;
@@ -899,20 +956,20 @@
           texRough.colorSpace  = THREE.LinearSRGBColorSpace;
 
           const mat = new THREE.MeshStandardMaterial({
-              map: texBase,
-              normalMap: texNormal,
-              roughnessMap: texRough,
-              metalness: 0.0,
-              roughness: 1.0,
-              envMapIntensity: 0.75,
+            map: texBase,
+            normalMap: texNormal,
+            roughnessMap: texRough,
+            metalness: 0.0,
+            roughness: 1.0,
+            envMapIntensity: 0.75,
           });
 
           root.traverse((obj) => {
-              if (obj.isMesh) {
-                  obj.material = mat;
-                  obj.castShadow = false;
-                  obj.receiveShadow = false;
-              }
+            if (obj.isMesh) {
+              obj.material = mat;
+              obj.castShadow = false;
+              obj.receiveShadow = false;
+            }
           });
         }
 
@@ -998,6 +1055,7 @@
     const hasVideo  = !!m.video;
 
     schemeActiveIndex = 0;
+    resetSchemeTransform();
 
     if (hasScheme) {
       tabSchemeBtn.classList.remove("disabled");
@@ -1010,7 +1068,7 @@
     if (hasVideo) {
       tabVideoBtn.classList.remove("disabled");
 
-      // грузим через fetch → blob, чтобы таймлайн был полный
+      // Важно: грузим через fetch → blob, чтобы таймлайн был полный
       fetch(m.video)
         .then(r => r.blob())
         .then(blob => {
@@ -1030,7 +1088,6 @@
       videoEl.load();
     }
 
-    // всегда стартуем с 3D
     setViewMode("3d");
   }
 
@@ -1058,6 +1115,11 @@
       if (!isVideo && !videoEl.paused) {
         videoEl.pause();
       }
+    }
+
+    // При выходе из схемы обязательно показываем UI
+    if (mode !== "scheme") {
+      setUiHidden(false);
     }
   }
 
@@ -1093,58 +1155,64 @@
   );
 
   /* ===============================
-     СХЕМА: FIT-TO-SCREEN, RESET, APPLY
+     UI AUTO-HIDE HELPERS
+  =============================== */
+  function setUiHidden(hidden) {
+    uiHiddenByZoom = hidden;
+    if (!viewerToolbar) return;
+    if (hidden) {
+      viewerToolbar.classList.add("ui-hidden");
+      statusEl.classList.add("ui-hidden");
+    } else {
+      viewerToolbar.classList.remove("ui-hidden");
+      statusEl.classList.remove("ui-hidden");
+    }
+  }
+
+  function updateUiVisibilityByScale() {
+    if (activeView !== "scheme") {
+      setUiHidden(false);
+      return;
+    }
+    const shouldHide = schemeScale > 1.1;
+    setUiHidden(shouldHide);
+  }
+
+  /* ===============================
+     СХЕМА: ЦЕНТР, RESET, APPLY
   =============================== */
 
-  function computeFitScale() {
-    if (!schemeOverlay || !schemeImg) return 1;
+  function getImageBaseOffset() {
     const rect = schemeOverlay.getBoundingClientRect();
-    const w = schemeImg.naturalWidth  || rect.width;
+    const w = schemeImg.naturalWidth || rect.width;
     const h = schemeImg.naturalHeight || rect.height;
-    if (!w || !h) return 1;
-    const scale = Math.min(rect.width / w, rect.height / h);
-    return scale > 0 ? scale : 1;
+
+    const baseX = (rect.width - w) / 2;
+    const baseY = (rect.height - h) / 2;
+    return { baseX, baseY };
   }
 
   function applySchemeTransform() {
-    if (!schemeOverlay || !schemeImg) return;
-
-    const rect = schemeOverlay.getBoundingClientRect();
-    const w = schemeImg.naturalWidth  || rect.width;
-    const h = schemeImg.naturalHeight || rect.height;
-
-    const totalScale = schemeBaseScale * schemeScale;
-
-    const imgW = w * totalScale;
-    const imgH = h * totalScale;
-
-    const baseX = (rect.width  - imgW) / 2;
-    const baseY = (rect.height - imgH) / 2;
-
+    const { baseX, baseY } = getImageBaseOffset();
     const x = baseX + schemeTx;
     const y = baseY + schemeTy;
+    schemeImg.style.transform = `translate(${x}px, ${y}px) scale(${schemeScale})`;
 
-    schemeImg.style.transform = `translate(${x}px, ${y}px) scale(${totalScale})`;
+    updateUiVisibilityByScale();
   }
 
   function resetSchemeTransform() {
-    if (!schemeOverlay || !schemeImg) return;
-
-    const perform = () => {
-      schemeBaseScale = computeFitScale();
-      schemeScale = 1;
-      schemeTx = 0;
-      schemeTy = 0;
-      applySchemeTransform();
-    };
+    schemeScale = 1;
+    schemeTx = 0;
+    schemeTy = 0;
 
     if (!schemeImg.naturalWidth) {
       schemeImg.onload = () => {
-        perform();
+        applySchemeTransform();
         schemeImg.onload = null;
       };
     } else {
-      perform();
+      applySchemeTransform();
     }
   }
 
@@ -1158,60 +1226,44 @@
     if (!overlay || !img) return;
 
     function clampScale(s) {
-      return Math.min(4, Math.max(1, s)); // пользовательский диапазон 1–4
+      return Math.min(4, Math.max(1, s)); // диапазон 1–4
     }
 
-    function zoomAtPoint(clientX, clientY, newUserScale) {
-      newUserScale = clampScale(newUserScale);
+    function zoomAtPoint(clientX, clientY, newScale) {
+      newScale = clampScale(newScale);
 
-      // если почти базовый масштаб — просто ресет
-      if (Math.abs(newUserScale - 1) < 1e-4) {
+      if (Math.abs(newScale - 1) < 1e-4) {
         resetSchemeTransform();
         return;
       }
 
       const rect = overlay.getBoundingClientRect();
-      const w = img.naturalWidth  || rect.width;
-      const h = img.naturalHeight || rect.height;
-
       const sx = clientX - rect.left;
       const sy = clientY - rect.top;
 
-      const totalBefore = schemeBaseScale * schemeScale;
-      const totalAfter  = schemeBaseScale * newUserScale;
+      const { baseX, baseY } = getImageBaseOffset();
 
-      const imgWBefore = w * totalBefore;
-      const imgHBefore = h * totalBefore;
-      const baseXBefore = (rect.width  - imgWBefore) / 2;
-      const baseYBefore = (rect.height - imgHBefore) / 2;
+      const lx = (sx - (baseX + schemeTx)) / schemeScale;
+      const ly = (sy - (baseY + schemeTy)) / schemeScale;
 
-      // точка внутри изображения до зума (в координатах исходной текстуры)
-      const lx = (sx - (baseXBefore + schemeTx)) / totalBefore;
-      const ly = (sy - (baseYBefore + schemeTy)) / totalBefore;
+      schemeTx = sx - baseX - lx * newScale;
+      schemeTy = sy - baseY - ly * newScale;
 
-      const imgWAfter = w * totalAfter;
-      const imgHAfter = h * totalAfter;
-      const baseXAfter = (rect.width  - imgWAfter) / 2;
-      const baseYAfter = (rect.height - imgHAfter) / 2;
-
-      schemeTx = sx - (baseXAfter + lx * totalAfter);
-      schemeTy = sy - (baseYAfter + ly * totalAfter);
-
-      schemeScale = newUserScale;
+      schemeScale = newScale;
       applySchemeTransform();
     }
 
     function handleSwipeIfNeeded() {
       const m = getCurrentModelMeta();
       if (!m || !m.schemes || m.schemes.length <= 1) return;
-      if (schemeScale !== 1) return; // свайпы только при fit-масштабе
+      if (schemeScale !== 1) return; // свайпы только при scale=1
 
       const dx = schemeEndX - schemeStartX;
       const dy = schemeEndY - schemeStartY;
 
       if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return;
 
-      const dir = dx < 0 ? 1 : -1; // влево — следующая, вправо — предыдущая
+      const dir = dx < 0 ? 1 : -1;
       const count = m.schemes.length;
       schemeActiveIndex = (schemeActiveIndex + dir + count) % count;
       schemeImg.src = m.schemes[schemeActiveIndex];
@@ -1246,7 +1298,6 @@
       schemeLastX = e.clientX;
       schemeLastY = e.clientY;
 
-      // При масштабе == fit-to-screen — не двигаем картинку
       if (schemeScale <= 1.001) return;
 
       schemeTx += dx;
@@ -1260,9 +1311,9 @@
       e.preventDefault();
 
       const delta = -e.deltaY * 0.0015;
-      const newUserScale = schemeScale + delta;
+      const newScale = schemeScale + delta;
 
-      zoomAtPoint(e.clientX, e.clientY, newUserScale);
+      zoomAtPoint(e.clientX, e.clientY, newScale);
     }, { passive: false });
 
     // ----- ТАЧ -----
@@ -1302,11 +1353,11 @@
         const delta = (dist - schemeLastPinchDist) * 0.005;
         schemeLastPinchDist = dist;
 
-        const newUserScale = schemeScale + delta;
+        const newScale = schemeScale + delta;
         zoomAtPoint(
           (e.touches[0].clientX + e.touches[1].clientX) / 2,
           (e.touches[0].clientY + e.touches[1].clientY) / 2,
-          newUserScale
+          newScale
         );
       }
     }, { passive: false });
@@ -1327,7 +1378,7 @@
       return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
     }
 
-    // DOUBLE TAP / DOUBLE CLICK — zoom в точку касания / возврат в центр
+    // DOUBLE TAP / DOUBLE CLICK — zoom в точку / reset
     let lastTapTime = 0;
     overlay.addEventListener("click", (e) => {
       if (activeView !== "scheme") return;
@@ -1335,12 +1386,27 @@
       const dt = now - lastTapTime;
       lastTapTime = now;
 
+      // двойной тап
       if (dt < 300) {
         if (schemeScale <= 1.01) {
-          zoomAtPoint(e.clientX, e.clientY, 2.0); // zoom-in
+          zoomAtPoint(e.clientX, e.clientY, 2.0);
         } else {
-          resetSchemeTransform();                 // zoom-out в центр
+          resetSchemeTransform();
         }
+        return;
+      }
+
+      // одиночный тап — показать UI на пару секунд, если картинка увеличена
+      if (schemeScale > 1.1 && uiHiddenByZoom) {
+        setUiHidden(false);
+        if (uiTempShowTimeout) {
+          clearTimeout(uiTempShowTimeout);
+        }
+        uiTempShowTimeout = setTimeout(() => {
+          if (schemeScale > 1.1 && activeView === "scheme") {
+            setUiHidden(true);
+          }
+        }, 2000);
       }
     });
   }
@@ -1357,7 +1423,6 @@
       } catch (e) {}
     });
   }
-
 </script>
 </body>
 </html>
