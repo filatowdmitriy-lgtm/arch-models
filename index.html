@@ -563,8 +563,9 @@
   /* ===============================
      СХЕМА: ПАРАМЕТРЫ ZOOM/PAN
   =============================== */
-  let schemeScale = 1;
-  let schemeTx = 0; // смещение от центра
+  let schemeScale = 1;        // пользовательский множитель (1–4)
+  let schemeBaseScale = 1;    // базовый fit-to-screen масштаб
+  let schemeTx = 0;           // смещение от центра
   let schemeTy = 0;
   let schemeActiveIndex = 0;
 
@@ -669,6 +670,11 @@
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // при смене размера пересчитаем fit-to-screen для схемы
+    if (activeView === "scheme") {
+      resetSchemeTransform();
+    }
   }
 
   /* ===============================
@@ -1176,40 +1182,60 @@
   }
 
   /* ===============================
-     СХЕМА: ЦЕНТР, RESET, APPLY
+     СХЕМА: FIT-TO-SCREEN, RESET, APPLY
   =============================== */
 
-  function getImageBaseOffset() {
+  function computeFitScale() {
+    if (!schemeOverlay || !schemeImg) return 1;
     const rect = schemeOverlay.getBoundingClientRect();
-    const w = schemeImg.naturalWidth || rect.width;
+    const w = schemeImg.naturalWidth  || rect.width;
     const h = schemeImg.naturalHeight || rect.height;
-
-    const baseX = (rect.width - w) / 2;
-    const baseY = (rect.height - h) / 2;
-    return { baseX, baseY };
+    if (!w || !h) return 1;
+    const scale = Math.min(rect.width / w, rect.height / h);
+    return scale > 0 ? scale : 1;
   }
 
   function applySchemeTransform() {
-    const { baseX, baseY } = getImageBaseOffset();
+    if (!schemeOverlay || !schemeImg) return;
+
+    const rect = schemeOverlay.getBoundingClientRect();
+    const w = schemeImg.naturalWidth  || rect.width;
+    const h = schemeImg.naturalHeight || rect.height;
+
+    const totalScale = schemeBaseScale * schemeScale;
+
+    const imgW = w * totalScale;
+    const imgH = h * totalScale;
+
+    const baseX = (rect.width  - imgW) / 2;
+    const baseY = (rect.height - imgH) / 2;
+
     const x = baseX + schemeTx;
     const y = baseY + schemeTy;
-    schemeImg.style.transform = `translate(${x}px, ${y}px) scale(${schemeScale})`;
+
+    schemeImg.style.transform = `translate(${x}px, ${y}px) scale(${totalScale})`;
 
     updateUiVisibilityByScale();
   }
 
   function resetSchemeTransform() {
-    schemeScale = 1;
-    schemeTx = 0;
-    schemeTy = 0;
+    if (!schemeOverlay || !schemeImg) return;
+
+    const perform = () => {
+      schemeBaseScale = computeFitScale();
+      schemeScale = 1;
+      schemeTx = 0;
+      schemeTy = 0;
+      applySchemeTransform();
+    };
 
     if (!schemeImg.naturalWidth) {
       schemeImg.onload = () => {
-        applySchemeTransform();
+        perform();
         schemeImg.onload = null;
       };
     } else {
-      applySchemeTransform();
+      perform();
     }
   }
 
@@ -1223,44 +1249,60 @@
     if (!overlay || !img) return;
 
     function clampScale(s) {
-      return Math.min(4, Math.max(1, s)); // диапазон 1–4
+      return Math.min(4, Math.max(1, s)); // пользовательский диапазон 1–4
     }
 
-    function zoomAtPoint(clientX, clientY, newScale) {
-      newScale = clampScale(newScale);
+    function zoomAtPoint(clientX, clientY, newUserScale) {
+      newUserScale = clampScale(newUserScale);
 
-      if (Math.abs(newScale - 1) < 1e-4) {
+      // если почти базовый масштаб — просто ресет
+      if (Math.abs(newUserScale - 1) < 1e-4) {
         resetSchemeTransform();
         return;
       }
 
       const rect = overlay.getBoundingClientRect();
+      const w = img.naturalWidth  || rect.width;
+      const h = img.naturalHeight || rect.height;
+
       const sx = clientX - rect.left;
       const sy = clientY - rect.top;
 
-      const { baseX, baseY } = getImageBaseOffset();
+      const totalBefore = schemeBaseScale * schemeScale;
+      const totalAfter  = schemeBaseScale * newUserScale;
 
-      const lx = (sx - (baseX + schemeTx)) / schemeScale;
-      const ly = (sy - (baseY + schemeTy)) / schemeScale;
+      const imgWBefore = w * totalBefore;
+      const imgHBefore = h * totalBefore;
+      const baseXBefore = (rect.width  - imgWBefore) / 2;
+      const baseYBefore = (rect.height - imgHBefore) / 2;
 
-      schemeTx = sx - baseX - lx * newScale;
-      schemeTy = sy - baseY - ly * newScale;
+      // точка внутри изображения до зума (в координатах исходной текстуры)
+      const lx = (sx - (baseXBefore + schemeTx)) / totalBefore;
+      const ly = (sy - (baseYBefore + schemeTy)) / totalBefore;
 
-      schemeScale = newScale;
+      const imgWAfter = w * totalAfter;
+      const imgHAfter = h * totalAfter;
+      const baseXAfter = (rect.width  - imgWAfter) / 2;
+      const baseYAfter = (rect.height - imgHAfter) / 2;
+
+      schemeTx = sx - (baseXAfter + lx * totalAfter);
+      schemeTy = sy - (baseYAfter + ly * totalAfter);
+
+      schemeScale = newUserScale;
       applySchemeTransform();
     }
 
     function handleSwipeIfNeeded() {
       const m = getCurrentModelMeta();
       if (!m || !m.schemes || m.schemes.length <= 1) return;
-      if (schemeScale !== 1) return; // свайпы только при scale=1
+      if (schemeScale !== 1) return; // свайпы только при fit-масштабе
 
       const dx = schemeEndX - schemeStartX;
       const dy = schemeEndY - schemeStartY;
 
       if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return;
 
-      const dir = dx < 0 ? 1 : -1;
+      const dir = dx < 0 ? 1 : -1; // влево — следующая, вправо — предыдущая
       const count = m.schemes.length;
       schemeActiveIndex = (schemeActiveIndex + dir + count) % count;
       schemeImg.src = m.schemes[schemeActiveIndex];
@@ -1295,6 +1337,7 @@
       schemeLastX = e.clientX;
       schemeLastY = e.clientY;
 
+      // При fit-масштабе (schemeScale == 1) — не двигаем
       if (schemeScale <= 1.001) return;
 
       schemeTx += dx;
@@ -1308,9 +1351,9 @@
       e.preventDefault();
 
       const delta = -e.deltaY * 0.0015;
-      const newScale = schemeScale + delta;
+      const newUserScale = schemeScale + delta;
 
-      zoomAtPoint(e.clientX, e.clientY, newScale);
+      zoomAtPoint(e.clientX, e.clientY, newUserScale);
     }, { passive: false });
 
     // ----- ТАЧ -----
@@ -1350,11 +1393,11 @@
         const delta = (dist - schemeLastPinchDist) * 0.005;
         schemeLastPinchDist = dist;
 
-        const newScale = schemeScale + delta;
+        const newUserScale = schemeScale + delta;
         zoomAtPoint(
           (e.touches[0].clientX + e.touches[1].clientX) / 2,
           (e.touches[0].clientY + e.touches[1].clientY) / 2,
-          newScale
+          newUserScale
         );
       }
     }, { passive: false });
