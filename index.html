@@ -163,6 +163,7 @@
     }
 
     /* ---------- TOOLBAR + TABS ---------- */
+
     .viewer-toolbar {
       position: absolute;
       top: 10px;
@@ -171,42 +172,40 @@
       z-index: 30;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
       pointer-events: auto;
       transition: opacity 0.25s ease, transform 0.25s ease;
     }
 
-    .viewer-toolbar-row {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .viewer-toolbar-row-top {
-      justify-content: space-between;
-      flex-wrap: nowrap;
-    }
-
-    .viewer-nav {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .viewer-tabs-row {
+    /* строка с названием модели */
+    .viewer-toolbar-title-row {
       width: 100%;
       display: flex;
       justify-content: center;
     }
 
+    .model-label {
+      font-size: 13px;
+      color: #b7b7c0;
+      max-width: 320px;
+      text-align: center;
+    }
+
+    /* основная строка с 6 кнопками (ПК) */
+    .viewer-toolbar-row-main {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: nowrap;
+    }
+
+    .viewer-nav,
     .viewer-tabs {
       display: flex;
+      gap: 8px;
       flex-wrap: nowrap;
-      gap: 6px;
-      width: 100%;
-      max-width: 480px;
-      margin: 0 auto;
-      justify-content: center;
     }
 
     .btn {
@@ -231,19 +230,11 @@
       min-width: 0;
     }
 
-    .model-label {
-      font-size: 13px;
-      color: #b7b7c0;
-      max-width: 260px;
-      text-align: right;
-    }
-
     .tab-btn {
       padding: 7px 10px;
       font-size: 12px;
       border-radius: 999px;
       opacity: 0.9;
-      flex: 1 1 0;
       min-width: 0;
       text-align: center;
     }
@@ -259,23 +250,31 @@
       pointer-events: none;
     }
 
+    /* мобильная верстка: 2 строки по 3 кнопки */
     @media (max-width: 640px) {
-      .viewer-toolbar-row-top {
+      .viewer-toolbar {
+        gap: 10px;
+      }
+
+      .viewer-toolbar-row-main {
         flex-direction: column;
         align-items: stretch;
+        gap: 6px;
       }
 
-      .viewer-nav {
-        justify-content: space-between;
+      .viewer-nav,
+      .viewer-tabs {
+        display: flex;
+        gap: 8px;
       }
 
-      .nav-btn {
+      .nav-btn,
+      .tab-btn {
         flex: 1 1 calc(33.33% - 6px);
         text-align: center;
       }
 
       .model-label {
-        text-align: left;
         max-width: none;
       }
     }
@@ -442,19 +441,23 @@
     <!-- ВЬЮЕР -->
     <div class="viewer-wrapper" id="viewerWrapper">
       <div class="viewer-toolbar">
-        <div class="viewer-toolbar-row viewer-toolbar-row-top">
+
+        <!-- строка только с названием модели -->
+        <div class="viewer-toolbar-title-row">
+          <div class="model-label" id="modelLabel"></div>
+        </div>
+
+        <!-- основная строка кнопок -->
+        <div class="viewer-toolbar-row-main">
           <div class="viewer-nav">
             <button class="btn nav-btn" id="backBtn">← Галерея</button>
             <button class="btn nav-btn" id="prevBtn">← Предыдущая</button>
             <button class="btn nav-btn" id="nextBtn">Следующая →</button>
           </div>
-          <div class="model-label" id="modelLabel"></div>
-        </div>
 
-        <div class="viewer-toolbar-row viewer-tabs-row">
           <div class="viewer-tabs">
             <button class="btn tab-btn active" id="tab3d">3D просмотр</button>
-            <button class="btn tab-btn" id="tabScheme">Схема построения</button>
+            <button class="btn tab-btn" id="tabScheme">Построение</button>
             <button class="btn tab-btn" id="tabVideo">Видео</button>
           </div>
         </div>
@@ -465,7 +468,7 @@
 
         <!-- СХЕМА -->
         <div class="alt-overlay" id="schemeOverlay">
-          <img id="schemeImage" src="" alt="Схема построения" />
+          <img id="schemeImage" src="" alt="Построение" />
         </div>
 
         <!-- ВИДЕО -->
@@ -566,8 +569,8 @@
   /* ===============================
      СХЕМА: ПАРАМЕТРЫ ZOOM/PAN
   =============================== */
-  let schemeScale = 1;
-  let schemeTx = 0; // смещение от центра
+  let schemeScale = 1;   // относительный масштаб (1 = вписанное изображение)
+  let schemeTx = 0;      // дополнительное смещение
   let schemeTy = 0;
   let schemeActiveIndex = 0;
 
@@ -672,6 +675,10 @@
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    // при изменении размеров экрана пересчитаем схему
+    if (activeView === "scheme" && schemeImg.src) {
+      applySchemeTransform();
+    }
   }
 
   /* ===============================
@@ -1179,24 +1186,39 @@
   }
 
   /* ===============================
-     СХЕМА: ЦЕНТР, RESET, APPLY
+     СХЕМА: ВПИСЫВАНИЕ, RESET, APPLY
   =============================== */
 
-  function getImageBaseOffset() {
+  // базовая инфа по изображению: вписанный масштаб и центр
+  function getImageBaseInfo() {
     const rect = schemeOverlay.getBoundingClientRect();
-    const w = schemeImg.naturalWidth || rect.width;
-    const h = schemeImg.naturalHeight || rect.height;
+    let iw = schemeImg.naturalWidth || rect.width;
+    let ih = schemeImg.naturalHeight || rect.height;
 
-    const baseX = (rect.width - w) / 2;
-    const baseY = (rect.height - h) / 2;
-    return { baseX, baseY };
+    if (!iw || !ih) {
+      iw = rect.width;
+      ih = rect.height;
+    }
+
+    const baseScale = Math.min(rect.width / iw, rect.height / ih) || 1;
+    const drawW = iw * baseScale;
+    const drawH = ih * baseScale;
+    const baseX = (rect.width - drawW) / 2;
+    const baseY = (rect.height - drawH) / 2;
+
+    return { rect, iw, ih, baseScale, baseX, baseY };
   }
 
   function applySchemeTransform() {
-    const { baseX, baseY } = getImageBaseOffset();
+    if (!schemeImg || !schemeImg.src) return;
+
+    const { baseX, baseY, baseScale } = getImageBaseInfo();
+    const totalScale = baseScale * schemeScale;
+
     const x = baseX + schemeTx;
     const y = baseY + schemeTy;
-    schemeImg.style.transform = `translate(${x}px, ${y}px) scale(${schemeScale})`;
+
+    schemeImg.style.transform = `translate(${x}px, ${y}px) scale(${totalScale})`;
 
     updateUiVisibilityByScale();
   }
@@ -1226,7 +1248,7 @@
     if (!overlay || !img) return;
 
     function clampScale(s) {
-      return Math.min(4, Math.max(1, s)); // диапазон 1–4
+      return Math.min(4, Math.max(1, s)); // относительный диапазон 1–4
     }
 
     function zoomAtPoint(clientX, clientY, newScale) {
@@ -1237,17 +1259,19 @@
         return;
       }
 
-      const rect = overlay.getBoundingClientRect();
+      const { rect, baseX, baseScale } = getImageBaseInfo();
+
       const sx = clientX - rect.left;
       const sy = clientY - rect.top;
 
-      const { baseX, baseY } = getImageBaseOffset();
+      const totalScaleBefore = baseScale * schemeScale;
+      const totalScaleAfter  = baseScale * newScale;
 
-      const lx = (sx - (baseX + schemeTx)) / schemeScale;
-      const ly = (sy - (baseY + schemeTy)) / schemeScale;
+      const lx = (sx - (baseX + schemeTx)) / totalScaleBefore;
+      const ly = (sy - (baseY + schemeTy)) / totalScaleBefore;
 
-      schemeTx = sx - baseX - lx * newScale;
-      schemeTy = sy - baseY - ly * newScale;
+      schemeTx = sx - baseX - lx * totalScaleAfter;
+      schemeTy = sy - baseY - ly * totalScaleAfter;
 
       schemeScale = newScale;
       applySchemeTransform();
@@ -1378,7 +1402,7 @@
       return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
     }
 
-    // DOUBLE TAP / DOUBLE CLICK — zoom в точку / reset
+    // DOUBLE TAP / DOUBLE CLICK — zoom в точку / reset + одиночный тап = подсветка UI
     let lastTapTime = 0;
     overlay.addEventListener("click", (e) => {
       if (activeView !== "scheme") return;
