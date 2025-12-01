@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <title>Архитектурные детали — 3D Viewer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+  />
 
   <style>
     * {
@@ -176,14 +179,15 @@
     .btn {
       background: rgba(0, 0, 0, 0.6);
       color: #f5f5f5;
-      border-radius: 10px;
-      padding: 8px 12px;
+      border-radius: 999px;
+      padding: 8px 14px;
       font-size: 13px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.14);
       cursor: pointer;
       user-select: none;
       backdrop-filter: blur(4px);
       white-space: nowrap;
+      line-height: 1.1;
     }
 
     .btn:active {
@@ -194,26 +198,32 @@
       font-size: 13px;
       color: #b7b7c0;
       max-width: 220px;
+      margin-left: auto;
+      text-align: right;
     }
 
     /* вкладки 3D / схема / видео */
     .viewer-tabs {
       display: flex;
-      flex-wrap: wrap;
+      flex: 1;
+      justify-content: center;
       gap: 6px;
     }
 
     .tab-btn {
-      padding: 6px 10px;
+      padding: 7px 14px;
       font-size: 12px;
       border-radius: 999px;
       opacity: 0.9;
+      position: relative;
+      overflow: hidden;
     }
 
     .tab-btn.active {
       background: linear-gradient(90deg, #ffffff, #8888ff);
       color: #050506;
       border-color: transparent;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6) inset;
     }
 
     .tab-btn.disabled {
@@ -245,6 +255,7 @@
       background: radial-gradient(circle at top, #050506 0%, #020203 60%);
       z-index: 25;
       touch-action: none;
+      overflow: hidden;
     }
 
     /* Схема: картинка управляется только через JS */
@@ -283,7 +294,7 @@
       align-items: center;
       justify-content: center;
       flex-direction: column;
-      background: radial-gradient(circle at top, rgba(0,0,0,0.85), rgba(0,0,0,0.96));
+      background: radial-gradient(circle at top, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.96));
       z-index: 40;
     }
 
@@ -494,8 +505,9 @@
   /* ===============================
      СХЕМА: ПАРАМЕТРЫ ZOOM/PAN
   =============================== */
-  let schemeScale = 1;
-  let schemeTx = 0; // смещение от центра
+  let schemeScale = 1;        // пользовательский множитель (1–4)
+  let schemeBaseScale = 1;    // fit-to-screen масштаб
+  let schemeTx = 0;           // смещение от центра
   let schemeTy = 0;
   let schemeActiveIndex = 0;
 
@@ -596,6 +608,11 @@
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // при смене размера пересчитаем fit-to-screen для схемы
+    if (activeView === "scheme") {
+      resetSchemeTransform();
+    }
   }
 
   /* ===============================
@@ -679,7 +696,7 @@
         );
       } else if (touchMode === "zoom" && e.touches.length === 2) {
         const dist = pinchDistance(e.touches[0], e.touches[1]);
-        const delta = (lastPinchDist - dist) * 0.01;
+        const delta = (dist - lastPinchDist) * 0.01;
 
         lastPinchDist = dist;
 
@@ -981,7 +998,6 @@
     const hasVideo  = !!m.video;
 
     schemeActiveIndex = 0;
-    resetSchemeTransform();
 
     if (hasScheme) {
       tabSchemeBtn.classList.remove("disabled");
@@ -994,7 +1010,7 @@
     if (hasVideo) {
       tabVideoBtn.classList.remove("disabled");
 
-      // Важно: грузим через fetch → blob, чтобы таймлайн был полный
+      // грузим через fetch → blob, чтобы таймлайн был полный
       fetch(m.video)
         .then(r => r.blob())
         .then(blob => {
@@ -1014,37 +1030,36 @@
       videoEl.load();
     }
 
+    // всегда стартуем с 3D
     setViewMode("3d");
   }
 
-function setViewMode(mode) {
-  activeView = mode;
+  function setViewMode(mode) {
+    activeView = mode;
 
-  tab3dBtn.classList.toggle("active", mode === "3d");
-  tabSchemeBtn.classList.toggle("active", mode === "scheme");
-  tabVideoBtn.classList.toggle("active", mode === "video");
+    tab3dBtn.classList.toggle("active", mode === "3d");
+    tabSchemeBtn.classList.toggle("active", mode === "scheme");
+    tabVideoBtn.classList.toggle("active", mode === "video");
 
-  // ----- СХЕМА -----
-  if (schemeOverlay) {
-    const isScheme = mode === "scheme";
-    schemeOverlay.style.display = isScheme ? "flex" : "none";
+    // ----- СХЕМА -----
+    if (schemeOverlay) {
+      const isScheme = mode === "scheme";
+      schemeOverlay.style.display = isScheme ? "flex" : "none";
 
-    // ВАЖНО: каждый раз, когда заходим в режим схемы,
-    // сбрасываем трансформацию и центрируем изображение.
-    if (isScheme) {
-      resetSchemeTransform();
+      if (isScheme) {
+        resetSchemeTransform();
+      }
+    }
+
+    // ----- ВИДЕО -----
+    if (videoOverlay) {
+      const isVideo = mode === "video";
+      videoOverlay.style.display = isVideo ? "flex" : "none";
+      if (!isVideo && !videoEl.paused) {
+        videoEl.pause();
+      }
     }
   }
-
-  // ----- ВИДЕО -----
-  if (videoOverlay) {
-    const isVideo = mode === "video";
-    videoOverlay.style.display = isVideo ? "flex" : "none";
-    if (!isVideo && !videoEl.paused) {
-      videoEl.pause();
-    }
-  }
-}
 
   /* ===============================
      LOADING UI
@@ -1078,39 +1093,58 @@ function setViewMode(mode) {
   );
 
   /* ===============================
-     СХЕМА: ЦЕНТР, RESET, APPLY
+     СХЕМА: FIT-TO-SCREEN, RESET, APPLY
   =============================== */
 
-  function getImageBaseOffset() {
+  function computeFitScale() {
+    if (!schemeOverlay || !schemeImg) return 1;
     const rect = schemeOverlay.getBoundingClientRect();
-    const w = schemeImg.naturalWidth || rect.width;
+    const w = schemeImg.naturalWidth  || rect.width;
     const h = schemeImg.naturalHeight || rect.height;
-
-    const baseX = (rect.width - w) / 2;
-    const baseY = (rect.height - h) / 2;
-    return { baseX, baseY };
+    if (!w || !h) return 1;
+    const scale = Math.min(rect.width / w, rect.height / h);
+    return scale > 0 ? scale : 1;
   }
 
   function applySchemeTransform() {
-    const { baseX, baseY } = getImageBaseOffset();
+    if (!schemeOverlay || !schemeImg) return;
+
+    const rect = schemeOverlay.getBoundingClientRect();
+    const w = schemeImg.naturalWidth  || rect.width;
+    const h = schemeImg.naturalHeight || rect.height;
+
+    const totalScale = schemeBaseScale * schemeScale;
+
+    const imgW = w * totalScale;
+    const imgH = h * totalScale;
+
+    const baseX = (rect.width  - imgW) / 2;
+    const baseY = (rect.height - imgH) / 2;
+
     const x = baseX + schemeTx;
     const y = baseY + schemeTy;
-    schemeImg.style.transform = `translate(${x}px, ${y}px) scale(${schemeScale})`;
+
+    schemeImg.style.transform = `translate(${x}px, ${y}px) scale(${totalScale})`;
   }
 
   function resetSchemeTransform() {
-    schemeScale = 1;
-    schemeTx = 0;
-    schemeTy = 0;
+    if (!schemeOverlay || !schemeImg) return;
 
-    // если натуральный размер ещё не известен — ждём загрузки
+    const perform = () => {
+      schemeBaseScale = computeFitScale();
+      schemeScale = 1;
+      schemeTx = 0;
+      schemeTy = 0;
+      applySchemeTransform();
+    };
+
     if (!schemeImg.naturalWidth) {
       schemeImg.onload = () => {
-        applySchemeTransform();
+        perform();
         schemeImg.onload = null;
       };
     } else {
-      applySchemeTransform();
+      perform();
     }
   }
 
@@ -1124,39 +1158,53 @@ function setViewMode(mode) {
     if (!overlay || !img) return;
 
     function clampScale(s) {
-      return Math.min(4, Math.max(1, s)); // диапазон 1–4
+      return Math.min(4, Math.max(1, s)); // пользовательский диапазон 1–4
     }
 
-    function zoomAtPoint(clientX, clientY, newScale) {
-      newScale = clampScale(newScale);
+    function zoomAtPoint(clientX, clientY, newUserScale) {
+      newUserScale = clampScale(newUserScale);
 
-      if (Math.abs(newScale - 1) < 1e-4) {
+      // если почти базовый масштаб — просто ресет
+      if (Math.abs(newUserScale - 1) < 1e-4) {
         resetSchemeTransform();
         return;
       }
 
       const rect = overlay.getBoundingClientRect();
+      const w = img.naturalWidth  || rect.width;
+      const h = img.naturalHeight || rect.height;
+
       const sx = clientX - rect.left;
       const sy = clientY - rect.top;
 
-      const { baseX, baseY } = getImageBaseOffset();
+      const totalBefore = schemeBaseScale * schemeScale;
+      const totalAfter  = schemeBaseScale * newUserScale;
 
-      // текущая точка внутри картинки
-      const lx = (sx - (baseX + schemeTx)) / schemeScale;
-      const ly = (sy - (baseY + schemeTy)) / schemeScale;
+      const imgWBefore = w * totalBefore;
+      const imgHBefore = h * totalBefore;
+      const baseXBefore = (rect.width  - imgWBefore) / 2;
+      const baseYBefore = (rect.height - imgHBefore) / 2;
 
-      // новая позиция смещения так, чтобы точка осталась на месте
-      schemeTx = sx - baseX - lx * newScale;
-      schemeTy = sy - baseY - ly * newScale;
+      // точка внутри изображения до зума (в координатах исходной текстуры)
+      const lx = (sx - (baseXBefore + schemeTx)) / totalBefore;
+      const ly = (sy - (baseYBefore + schemeTy)) / totalBefore;
 
-      schemeScale = newScale;
+      const imgWAfter = w * totalAfter;
+      const imgHAfter = h * totalAfter;
+      const baseXAfter = (rect.width  - imgWAfter) / 2;
+      const baseYAfter = (rect.height - imgHAfter) / 2;
+
+      schemeTx = sx - (baseXAfter + lx * totalAfter);
+      schemeTy = sy - (baseYAfter + ly * totalAfter);
+
+      schemeScale = newUserScale;
       applySchemeTransform();
     }
 
     function handleSwipeIfNeeded() {
       const m = getCurrentModelMeta();
       if (!m || !m.schemes || m.schemes.length <= 1) return;
-      if (schemeScale !== 1) return; // свайпы только при scale=1
+      if (schemeScale !== 1) return; // свайпы только при fit-масштабе
 
       const dx = schemeEndX - schemeStartX;
       const dy = schemeEndY - schemeStartY;
@@ -1198,7 +1246,7 @@ function setViewMode(mode) {
       schemeLastX = e.clientX;
       schemeLastY = e.clientY;
 
-      // При масштабе 1:1 — не двигаем картинку
+      // При масштабе == fit-to-screen — не двигаем картинку
       if (schemeScale <= 1.001) return;
 
       schemeTx += dx;
@@ -1212,9 +1260,9 @@ function setViewMode(mode) {
       e.preventDefault();
 
       const delta = -e.deltaY * 0.0015;
-      const newScale = schemeScale + delta;
+      const newUserScale = schemeScale + delta;
 
-      zoomAtPoint(e.clientX, e.clientY, newScale);
+      zoomAtPoint(e.clientX, e.clientY, newUserScale);
     }, { passive: false });
 
     // ----- ТАЧ -----
@@ -1254,11 +1302,11 @@ function setViewMode(mode) {
         const delta = (dist - schemeLastPinchDist) * 0.005;
         schemeLastPinchDist = dist;
 
-        const newScale = schemeScale + delta;
+        const newUserScale = schemeScale + delta;
         zoomAtPoint(
           (e.touches[0].clientX + e.touches[1].clientX) / 2,
           (e.touches[0].clientY + e.touches[1].clientY) / 2,
-          newScale
+          newUserScale
         );
       }
     }, { passive: false });
