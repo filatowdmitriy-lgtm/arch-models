@@ -196,6 +196,31 @@
       max-width: 220px;
     }
 
+    /* вкладки 3D / схема / видео */
+    .viewer-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .tab-btn {
+      padding: 6px 10px;
+      font-size: 12px;
+      border-radius: 999px;
+      opacity: 0.9;
+    }
+
+    .tab-btn.active {
+      background: linear-gradient(90deg, #ffffff, #8888ff);
+      color: #050506;
+      border-color: transparent;
+    }
+
+    .tab-btn.disabled {
+      opacity: 0.25;
+      pointer-events: none;
+    }
+
     .viewer-main {
       position: absolute;
       inset: 0;
@@ -207,6 +232,47 @@
       width: 100%;
       height: 100%;
       touch-action: none;
+    }
+
+    /* Оверлеи для схемы и видео */
+    .alt-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      background: radial-gradient(circle at top, #050506 0%, #020203 60%);
+      z-index: 25;
+      touch-action: none;
+    }
+
+    /* Схема: картинка управляется только через JS */
+    #schemeOverlay img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      max-width: none;
+      max-height: none;
+      transform-origin: 0 0;
+      touch-action: none;
+      user-select: none;
+      pointer-events: auto;
+      will-change: transform;
+      display: block;
+    }
+
+    /* Схема: выше канваса, ниже тулбара, кнопки не перекрывает */
+    #schemeOverlay {
+      z-index: 20 !important;
+      pointer-events: auto;
+    }
+
+    .alt-overlay video {
+      max-width: 100%;
+      max-height: 100%;
+      border-radius: 10px;
+      background: #050506;
     }
 
     /* ---------- LOADING OVERLAY ---------- */
@@ -281,7 +347,7 @@
   }
   </script>
 
-  <!-- Telegram Mini App: готовность и auto-expand (без ошибок вне Telegram) -->
+  <!-- Telegram Mini App: готовность и auto-expand -->
   <script>
     (function () {
       if (window.Telegram && Telegram.WebApp) {
@@ -312,11 +378,29 @@
         <button class="btn" id="backBtn">← Галерея</button>
         <button class="btn" id="prevBtn">← Предыдущая</button>
         <button class="btn" id="nextBtn">Следующая →</button>
+
+        <!-- вкладки режима просмотра -->
+        <div class="viewer-tabs">
+          <button class="btn tab-btn active" id="tab3d">3D просмотр</button>
+          <button class="btn tab-btn" id="tabScheme">Схема построения</button>
+          <button class="btn tab-btn" id="tabVideo">Видео</button>
+        </div>
+
         <div class="model-label" id="modelLabel"></div>
       </div>
 
       <div class="viewer-main">
         <canvas id="canvas"></canvas>
+
+        <!-- СХЕМА -->
+        <div class="alt-overlay" id="schemeOverlay">
+          <img id="schemeImage" src="" alt="Схема построения" />
+        </div>
+
+        <!-- ВИДЕО -->
+        <div class="alt-overlay" id="videoOverlay">
+          <video id="videoPlayer" controls playsinline webkit-playsinline preload="metadata"></video>
+        </div>
       </div>
 
       <!-- LOADING OVERLAY -->
@@ -346,14 +430,18 @@
       name: "Дорическая капитель",
       desc: "Архаический строгий стиль.",
       url: "https://filatowdmitriy-lgtm.github.io/arch-models/models/doric.gltf",
-      thumbLetter: "D"
+      thumbLetter: "D",
+      schemes: ["https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/scheme1.jpg"],
+      video: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/test_video.mp4"
     },
     {
       id: "ionic",
       name: "Ионическая капитель",
       desc: "Классический греческий ордер, витые волюты.",
       url: "https://filatowdmitriy-lgtm.github.io/arch-models/models/ionic.gltf",
-      thumbLetter: "I"
+      thumbLetter: "I",
+      schemes: ["https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/scheme1.jpg"],
+      video: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/test_video.mp4"
     }
   ];
 
@@ -372,9 +460,18 @@
   const statusEl       = document.getElementById("status");
   const canvas         = document.getElementById("canvas");
 
+  const schemeOverlay  = document.getElementById("schemeOverlay");
+  const videoOverlay   = document.getElementById("videoOverlay");
+  const schemeImg      = document.getElementById("schemeImage");
+  const videoEl        = document.getElementById("videoPlayer");
+  const tab3dBtn       = document.getElementById("tab3d");
+  const tabSchemeBtn   = document.getElementById("tabScheme");
+  const tabVideoBtn    = document.getElementById("tabVideo");
+
   let scene, camera, renderer;
   let currentModel = null;
   let currentModelId = null;
+  let activeView = "3d";
 
   /* ===============================
      КЭШ МОДЕЛЕЙ
@@ -383,18 +480,35 @@
 
   /* ===============================
      СОСТОЯНИЕ КАМЕРЫ
-     — фронтальный ракурс
-     — лёгкий подъём (rotX)
   =============================== */
   const state = {
     radius: 4.5,
     minRadius: 2.0,
     maxRadius: 12.0,
-    rotX: 0.10,       // фронтальный вид — слегка сверху
-    rotY: 0.00,       // строго по центру
+    rotX: 0.10,
+    rotY: 0.00,
     targetRotX: 0.10,
     targetRotY: 0.00
   };
+
+  /* ===============================
+     СХЕМА: ПАРАМЕТРЫ ZOOM/PAN
+  =============================== */
+  let schemeScale = 1;
+  let schemeTx = 0; // смещение от центра
+  let schemeTy = 0;
+  let schemeActiveIndex = 0;
+
+  let schemeIsDragging = false;
+  let schemeLastX = 0;
+  let schemeLastY = 0;
+
+  let schemeTouchMode = null;
+  let schemeLastPinchDist = 0;
+  let schemeStartX = 0;
+  let schemeStartY = 0;
+  let schemeEndX = 0;
+  let schemeEndY = 0;
 
   /* ===============================
      ИНИЦИАЛИЗАЦИЯ THREE.JS
@@ -402,12 +516,13 @@
   initThree();
   buildGallery();
   showGallery();
+  initSchemeGestures();
+  initVideoMetadataHack();
 
   function initThree() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x050506);
 
-    /* ---------- КАМЕРА ---------- */
     camera = new THREE.PerspectiveCamera(
       40,
       window.innerWidth / window.innerHeight,
@@ -416,7 +531,6 @@
     );
     updateCameraPosition();
 
-    /* ---------- РЕНДЕРЕР ---------- */
     renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
@@ -428,66 +542,46 @@
     renderer.shadowMap.type = THREE.BasicShadowMap;
 
     /* ---------- СТУДИЙНОЕ ОСВЕЩЕНИЕ ---------- */
-
-
-    // 1) Верхний мягкий полутон — чуть холодный
     const zenith = new THREE.DirectionalLight(0xf5f8ff, 0.0);
     zenith.position.set(0, 11, 2);
     scene.add(zenith);
 
-    // 2) Главный KEY — тёплый, мощный, выразительный
     const key = new THREE.DirectionalLight(0xffc4a0, 1.85);
     key.position.set(5.5, 6.0, 3.5);
-    key.castShadow = false;  // можно включить, если хочешь сильные тени
+    key.castShadow = false;
     scene.add(key);
 
-    // 3) Глубокий холодный SHADOW FILL (минимальный)
     const fill = new THREE.DirectionalLight(0xcad8ff, 0.35);
     fill.position.set(-7, 3.5, 2);
     scene.add(fill);
 
-    // 4) Главный RIM — белый, сильный, даёт “подсветку контура”
     const rim = new THREE.DirectionalLight(0xffffff, 0.5);
     rim.position.set(-3.5, 5, -7.5);
     scene.add(rim);
 
-    // 5) Второй rim (очень холодный, узкий)
     const rimCold = new THREE.DirectionalLight(0xd8e4ff, 0.1);
     rimCold.position.set(2.5, 3.5, -5);
     scene.add(rimCold);
 
-    // 7) Ambient — минимальный, почти незаметный
     const ambient = new THREE.AmbientLight(0xffffff, 0.04);
     scene.add(ambient);
 
-    // 8) Hemisphere — микро-подсветка, создаёт “ореол”
     const hemi = new THREE.HemisphereLight(0xffffff, 0x0a0a0a, 0.07);
     scene.add(hemi);
 
-
-    
-
-   
-
-    /* ---------- АДАПТАЦИЯ ПРИ РЕЗАЙЗЕ ---------- */
     window.addEventListener("resize", onWindowResize);
 
-    /* ---------- УПРАВЛЕНИЕ (ОРБИТЫ) ---------- */
     initControls();
 
-    /* ---------- ГЛАВНЫЙ РЕНДЕР-ЦИКЛ ---------- */
     renderer.setAnimationLoop(() => {
       state.rotX += (state.targetRotX - state.rotX) * 0.22;
-      state.rotY += (state.targetRotY - state.rotY) * 0.22; 
+      state.rotY += (state.targetRotY - state.rotY) * 0.22;
 
       updateCameraPosition();
       renderer.render(scene, camera);
     });
   }
 
-  /* ===============================
-     ПЕРЕСЧЁТ ПОЗИЦИИ КАМЕРЫ
-  =============================== */
   function updateCameraPosition() {
     const r = state.radius;
     const x = r * Math.sin(state.rotY) * Math.cos(state.rotX);
@@ -498,9 +592,6 @@
     camera.lookAt(0, 0, 0);
   }
 
-  /* ===============================
-     РЕАКЦИЯ НА РЕЗАЙЗ
-  =============================== */
   function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -508,7 +599,7 @@
   }
 
   /* ===============================
-     УПРАВЛЕНИЕ МЫШЬЮ + ТАЧЕМ
+     УПРАВЛЕНИЕ МЫШЬЮ + ТАЧЕМ (3D)
   =============================== */
   function initControls() {
     let isDragging = false;
@@ -516,7 +607,6 @@
     let touchMode = null;
     let lastPinchDist = 0;
 
-    /* ----- МЫШЬ ----- */
     canvas.addEventListener("mousedown", (e) => {
       isDragging = true;
       lastX = e.clientX;
@@ -545,7 +635,6 @@
       );
     });
 
-    /* ----- ЗУМ КОЛЕСОМ ----- */
     canvas.addEventListener("wheel", (e) => {
       e.preventDefault();
       const delta = e.deltaY * 0.002;
@@ -557,7 +646,6 @@
       );
     }, { passive: false });
 
-    /* ----- ТАЧ УПРАВЛЕНИЕ ----- */
     canvas.addEventListener("touchstart", (e) => {
       e.preventDefault();
       if (e.touches.length === 1) {
@@ -664,6 +752,7 @@
     galleryEl.classList.add("hidden");
     viewerWrapper.classList.add("visible");
 
+    configureViewTabsForModel(m);
     loadModel(modelId);
   }
 
@@ -693,6 +782,18 @@
     openViewerForModel(MODELS[idx].id);
   });
 
+  tab3dBtn.addEventListener("click", () => setViewMode("3d"));
+  tabSchemeBtn.addEventListener("click", () => {
+    const m = getCurrentModelMeta();
+    if (!m || !m.schemes || m.schemes.length === 0) return;
+    setViewMode("scheme");
+  });
+  tabVideoBtn.addEventListener("click", () => {
+    const m = getCurrentModelMeta();
+    if (!m || !m.video) return;
+    setViewMode("video");
+  });
+
   /* ===============================
      ЗАГРУЗКА МОДЕЛИ (pivot + кэш)
   =============================== */
@@ -704,7 +805,6 @@
     showLoading("Загрузка…", 0);
     setStatus("Загрузка: " + m.name);
 
-    /* --- КЭШ --- */
     if (cache[m.id]) {
       const clone = cache[m.id].clone(true);
       setModel(clone);
@@ -713,7 +813,6 @@
       return;
     }
 
-    /* --- ЗАГРУЗЧИК --- */
     const loader = new GLTFLoader();
 
     loader.load(
@@ -721,147 +820,123 @@
       (gltf) => {
         const root = new THREE.Group();
         root.add(gltf.scene);
-        
-        /* --- PBR материалы --- */
 
-// ===== ДОРИЧЕСКАЯ =====
-if (m.id === "doric") {
+        // ===== ДОРИЧЕСКАЯ =====
+        if (m.id === "doric") {
 
-    const texBase = new THREE.TextureLoader().load(
-        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/BaseColor.jpg"
-    );
-    const texNormal = new THREE.TextureLoader().load(
-        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Normal.jpg"
-    );
-    const texRough = new THREE.TextureLoader().load(
-        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg"
-    );
+          const texBase = new THREE.TextureLoader().load(
+              "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/BaseColor.jpg"
+          );
+          const texNormal = new THREE.TextureLoader().load(
+              "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Normal.jpg"
+          );
+          const texRough = new THREE.TextureLoader().load(
+              "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg"
+          );
 
-    texBase.flipY = false;
-    texNormal.flipY = false;
-    texRough.flipY = false;
+          texBase.flipY = false;
+          texNormal.flipY = false;
+          texRough.flipY = false;
 
-    texBase.colorSpace   = THREE.SRGBColorSpace;
-    texNormal.colorSpace = THREE.LinearSRGBColorSpace;
-    texRough.colorSpace  = THREE.LinearSRGBColorSpace;
+          texBase.colorSpace   = THREE.SRGBColorSpace;
+          texNormal.colorSpace = THREE.LinearSRGBColorSpace;
+          texRough.colorSpace  = THREE.LinearSRGBColorSpace;
 
-    const mat = new THREE.MeshStandardMaterial({
-        map: texBase,
-        normalMap: texNormal,
-        roughnessMap: texRough,
-        metalness: 0.0,
-        roughness: 1.0,
-        envMapIntensity: 0.7,
-    });
+          const mat = new THREE.MeshStandardMaterial({
+              map: texBase,
+              normalMap: texNormal,
+              roughnessMap: texRough,
+              metalness: 0.0,
+              roughness: 1.0,
+              envMapIntensity: 0.7,
+          });
 
-    root.traverse((obj) => {
-        if (obj.isMesh) {
-            obj.material = mat;
-            obj.castShadow = false;
-            obj.receiveShadow = false;
+          root.traverse((obj) => {
+              if (obj.isMesh) {
+                  obj.material = mat;
+                  obj.castShadow = false;
+                  obj.receiveShadow = false;
+              }
+          });
         }
-    });
-}
 
+        // ===== ИОНИЧЕСКАЯ =====
+        if (m.id === "ionic") {
 
-// ===== ИОНИЧЕСКАЯ =====
-if (m.id === "ionic") {
+          const texBase = new THREE.TextureLoader().load(
+              "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/BaseColor.jpg"
+          );
+          const texNormal = new THREE.TextureLoader().load(
+              "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Normal.jpg"
+          );
+          const texRough = new THREE.TextureLoader().load(
+              "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg"
+          );
 
-    const texBase = new THREE.TextureLoader().load(
-        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/BaseColor.jpg"
-    );
-    const texNormal = new THREE.TextureLoader().load(
-        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Normal.jpg"
-    );
-    const texRough = new THREE.TextureLoader().load(
-        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg"
-    );
+          texBase.flipY = false;
+          texNormal.flipY = false;
+          texRough.flipY = false;
 
-    texBase.flipY = false;
-    texNormal.flipY = false;
-    texRough.flipY = false;
+          texBase.colorSpace   = THREE.SRGBColorSpace;
+          texNormal.colorSpace = THREE.LinearSRGBColorSpace;
+          texRough.colorSpace  = THREE.LinearSRGBColorSpace;
 
-    texBase.colorSpace   = THREE.SRGBColorSpace;
-    texNormal.colorSpace = THREE.LinearSRGBColorSpace;
-    texRough.colorSpace  = THREE.LinearSRGBColorSpace;
+          const mat = new THREE.MeshStandardMaterial({
+              map: texBase,
+              normalMap: texNormal,
+              roughnessMap: texRough,
+              metalness: 0.0,
+              roughness: 1.0,
+              envMapIntensity: 0.75,
+          });
 
-    const mat = new THREE.MeshStandardMaterial({
-        map: texBase,
-        normalMap: texNormal,
-        roughnessMap: texRough,
-        metalness: 0.0,
-        roughness: 1.0,
-        envMapIntensity: 0.75,
-    });
-
-    root.traverse((obj) => {
-        if (obj.isMesh) {
-            obj.material = mat;
-            obj.castShadow = false;
-            obj.receiveShadow = false;
+          root.traverse((obj) => {
+              if (obj.isMesh) {
+                  obj.material = mat;
+                  obj.castShadow = false;
+                  obj.receiveShadow = false;
+              }
+          });
         }
-    });
-}
 
-
-        /* ---------- PIVOT ---------- */
         const box = new THREE.Box3().setFromObject(root);
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
 
-        // смещаем модель в (0,0,0)
         gltf.scene.position.sub(center);
 
-        /* ---------- МАСШТАБ ---------- */
         const maxSize = Math.max(size.x, size.y, size.z);
         if (maxSize > 0) {
-          const base = 2.0;               // целевой визуальный размер
+          const base = 2.0;
           const scale = base / maxSize;
           root.scale.setScalar(scale);
 
-          // пересчёт bounding sphere после масштаба
           const box2 = new THREE.Box3().setFromObject(root);
           const sphere = box2.getBoundingSphere(new THREE.Sphere());
           const baseRadius = sphere.radius || base;
 
-// ---------- ИДЕАЛЬНАЯ АВТО-КАМЕРА ПО SPHERE-RADIUS ----------
-const fovRad = camera.fov * Math.PI / 180;
+          const fovRad = camera.fov * Math.PI / 180;
+          let dist = baseRadius / Math.sin(fovRad / 2);
 
-// центр и радиус
-const sphereRadius = baseRadius;
+          const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
+          const distanceFactor = isMobile ? 1.55 : 1;
+          dist *= distanceFactor;
 
-// расстояние: полностью помещает сферу в кадр
-let dist = sphereRadius / Math.sin(fovRad / 2);
+          state.radius = dist;
+          state.targetRadius = dist;
 
-// Определяем мобильное устройство
-const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-// Разный множитель камеры
-const distanceFactor = isMobile ? 1.55 : 1;
-
-// немного воздуха
-dist *= distanceFactor;
-state.radius = dist;
-state.targetRadius = dist;
-
-// применяем
-state.minRadius = dist * 0.4;
-state.maxRadius = dist * 6.0;
+          state.minRadius = dist * 0.4;
+          state.maxRadius = dist * 6.0;
         }
 
-
-
-        /* ---------- КЭШИРУЕМ ---------- */
         cache[m.id] = root.clone(true);
 
-        /* ---------- ПОКАЗЫВАЕМ МОДЕЛЬ ---------- */
         setModel(root);
 
         hideLoading();
         setStatus("Модель загружена: " + m.name);
       },
 
-      /* --- ПРОГРЕСС --- */
       (xhr) => {
         if (xhr.lengthComputable) {
           const percent = (xhr.loaded / xhr.total) * 100;
@@ -871,7 +946,6 @@ state.maxRadius = dist * 6.0;
         }
       },
 
-      /* --- ОШИБКА --- */
       (err) => {
         console.error("Ошибка загрузки модели:", err);
         hideLoading();
@@ -881,9 +955,6 @@ state.maxRadius = dist * 6.0;
     );
   }
 
-  /* ===============================
-     УСТАНОВКА МОДЕЛИ В СЦЕНУ
-  =============================== */
   function setModel(root) {
     if (currentModel) {
       scene.remove(currentModel);
@@ -891,31 +962,89 @@ state.maxRadius = dist * 6.0;
     currentModel = root;
     scene.add(currentModel);
 
-    // фронтальный ракурс
     state.targetRotX = 0.10;
     state.targetRotY = 0.00;
+
+    setViewMode("3d");
   }
 
   /* ===============================
-     МАТЕРИАЛ — «ГИПС»
+     ВСПОМОГАТЕЛЬНОЕ ДЛЯ ВКЛАДОК
   =============================== */
-  function applyPlasterMaterial(root) {
-    const plaster = new THREE.MeshPhysicalMaterial({
-      color: 0xf5f5f5,
-      roughness: 0.8,
-      metalness: 0.0,
-      sheen: 0.1,
-      clearcoat: 0.05
-    });
-
-    root.traverse((obj) => {
-      if (obj.isMesh) {
-        obj.material = plaster;
-        obj.castShadow = true;
-        obj.receiveShadow = true;
-      }
-    });
+  function getCurrentModelMeta() {
+    if (!currentModelId) return null;
+    return MODELS.find((m) => m.id === currentModelId) || null;
   }
+
+  function configureViewTabsForModel(m) {
+    const hasScheme = m.schemes && m.schemes.length > 0;
+    const hasVideo  = !!m.video;
+
+    schemeActiveIndex = 0;
+    resetSchemeTransform();
+
+    if (hasScheme) {
+      tabSchemeBtn.classList.remove("disabled");
+      schemeImg.src = m.schemes[schemeActiveIndex];
+    } else {
+      tabSchemeBtn.classList.add("disabled");
+      schemeImg.removeAttribute("src");
+    }
+
+    if (hasVideo) {
+      tabVideoBtn.classList.remove("disabled");
+
+      // Важно: грузим через fetch → blob, чтобы таймлайн был полный
+      fetch(m.video)
+        .then(r => r.blob())
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          videoEl.src = url;
+          videoEl.load();
+        })
+        .catch(err => {
+          console.error("Ошибка загрузки видео:", err);
+          videoEl.removeAttribute("src");
+          videoEl.load();
+        });
+
+    } else {
+      tabVideoBtn.classList.add("disabled");
+      videoEl.removeAttribute("src");
+      videoEl.load();
+    }
+
+    setViewMode("3d");
+  }
+
+function setViewMode(mode) {
+  activeView = mode;
+
+  tab3dBtn.classList.toggle("active", mode === "3d");
+  tabSchemeBtn.classList.toggle("active", mode === "scheme");
+  tabVideoBtn.classList.toggle("active", mode === "video");
+
+  // ----- СХЕМА -----
+  if (schemeOverlay) {
+    const isScheme = mode === "scheme";
+    schemeOverlay.style.display = isScheme ? "flex" : "none";
+
+    // ВАЖНО: каждый раз, когда заходим в режим схемы,
+    // сбрасываем трансформацию и центрируем изображение.
+    if (isScheme) {
+      resetSchemeTransform();
+    }
+  }
+
+  // ----- ВИДЕО -----
+  if (videoOverlay) {
+    const isVideo = mode === "video";
+    videoOverlay.style.display = isVideo ? "flex" : "none";
+    if (!isVideo && !videoEl.paused) {
+      videoEl.pause();
+    }
+  }
+}
 
   /* ===============================
      LOADING UI
@@ -938,8 +1067,6 @@ state.maxRadius = dist * 6.0;
     statusEl.textContent = text || "";
   }
 
-  // Глобально блокируем прокрутку страницы,
-  // когда открыт вьюер (актуально для Mini App)
   document.addEventListener(
     "touchmove",
     (e) => {
@@ -949,6 +1076,240 @@ state.maxRadius = dist * 6.0;
     },
     { passive: false }
   );
+
+  /* ===============================
+     СХЕМА: ЦЕНТР, RESET, APPLY
+  =============================== */
+
+  function getImageBaseOffset() {
+    const rect = schemeOverlay.getBoundingClientRect();
+    const w = schemeImg.naturalWidth || rect.width;
+    const h = schemeImg.naturalHeight || rect.height;
+
+    const baseX = (rect.width - w) / 2;
+    const baseY = (rect.height - h) / 2;
+    return { baseX, baseY };
+  }
+
+  function applySchemeTransform() {
+    const { baseX, baseY } = getImageBaseOffset();
+    const x = baseX + schemeTx;
+    const y = baseY + schemeTy;
+    schemeImg.style.transform = `translate(${x}px, ${y}px) scale(${schemeScale})`;
+  }
+
+  function resetSchemeTransform() {
+    schemeScale = 1;
+    schemeTx = 0;
+    schemeTy = 0;
+
+    // если натуральный размер ещё не известен — ждём загрузки
+    if (!schemeImg.naturalWidth) {
+      schemeImg.onload = () => {
+        applySchemeTransform();
+        schemeImg.onload = null;
+      };
+    } else {
+      applySchemeTransform();
+    }
+  }
+
+  /* ===============================
+     СХЕМА: GESTURES (ZOOM / PAN / SWIPE / DOUBLE TAP)
+  =============================== */
+  function initSchemeGestures() {
+    const overlay = schemeOverlay;
+    const img = schemeImg;
+
+    if (!overlay || !img) return;
+
+    function clampScale(s) {
+      return Math.min(4, Math.max(1, s)); // диапазон 1–4
+    }
+
+    function zoomAtPoint(clientX, clientY, newScale) {
+      newScale = clampScale(newScale);
+
+      if (Math.abs(newScale - 1) < 1e-4) {
+        resetSchemeTransform();
+        return;
+      }
+
+      const rect = overlay.getBoundingClientRect();
+      const sx = clientX - rect.left;
+      const sy = clientY - rect.top;
+
+      const { baseX, baseY } = getImageBaseOffset();
+
+      // текущая точка внутри картинки
+      const lx = (sx - (baseX + schemeTx)) / schemeScale;
+      const ly = (sy - (baseY + schemeTy)) / schemeScale;
+
+      // новая позиция смещения так, чтобы точка осталась на месте
+      schemeTx = sx - baseX - lx * newScale;
+      schemeTy = sy - baseY - ly * newScale;
+
+      schemeScale = newScale;
+      applySchemeTransform();
+    }
+
+    function handleSwipeIfNeeded() {
+      const m = getCurrentModelMeta();
+      if (!m || !m.schemes || m.schemes.length <= 1) return;
+      if (schemeScale !== 1) return; // свайпы только при scale=1
+
+      const dx = schemeEndX - schemeStartX;
+      const dy = schemeEndY - schemeStartY;
+
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return;
+
+      const dir = dx < 0 ? 1 : -1; // влево — следующая, вправо — предыдущая
+      const count = m.schemes.length;
+      schemeActiveIndex = (schemeActiveIndex + dir + count) % count;
+      schemeImg.src = m.schemes[schemeActiveIndex];
+
+      resetSchemeTransform();
+    }
+
+    // ----- МЫШЬ -----
+    overlay.addEventListener("mousedown", (e) => {
+      if (activeView !== "scheme") return;
+      schemeIsDragging = true;
+      schemeLastX = e.clientX;
+      schemeLastY = e.clientY;
+      schemeStartX = e.clientX;
+      schemeStartY = e.clientY;
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (!schemeIsDragging) return;
+      schemeIsDragging = false;
+      schemeEndX = schemeLastX;
+      schemeEndY = schemeLastY;
+      handleSwipeIfNeeded();
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!schemeIsDragging || activeView !== "scheme") return;
+
+      const dx = e.clientX - schemeLastX;
+      const dy = e.clientY - schemeLastY;
+
+      schemeLastX = e.clientX;
+      schemeLastY = e.clientY;
+
+      // При масштабе 1:1 — не двигаем картинку
+      if (schemeScale <= 1.001) return;
+
+      schemeTx += dx;
+      schemeTy += dy;
+      applySchemeTransform();
+    });
+
+    // ЗУМ КОЛЕСОМ (в точку курсора)
+    overlay.addEventListener("wheel", (e) => {
+      if (activeView !== "scheme") return;
+      e.preventDefault();
+
+      const delta = -e.deltaY * 0.0015;
+      const newScale = schemeScale + delta;
+
+      zoomAtPoint(e.clientX, e.clientY, newScale);
+    }, { passive: false });
+
+    // ----- ТАЧ -----
+    overlay.addEventListener("touchstart", (e) => {
+      if (activeView !== "scheme") return;
+      if (e.touches.length === 1) {
+        schemeTouchMode = "pan";
+        const t = e.touches[0];
+        schemeLastX = t.clientX;
+        schemeLastY = t.clientY;
+        schemeStartX = t.clientX;
+        schemeStartY = t.clientY;
+      } else if (e.touches.length === 2) {
+        schemeTouchMode = "zoom";
+        schemeLastPinchDist = schemePinchDist(e.touches[0], e.touches[1]);
+      }
+    }, { passive: false });
+
+    overlay.addEventListener("touchmove", (e) => {
+      if (activeView !== "scheme") return;
+      e.preventDefault();
+
+      if (schemeTouchMode === "pan" && e.touches.length === 1) {
+        const t = e.touches[0];
+        const dx = t.clientX - schemeLastX;
+        const dy = t.clientY - schemeLastY;
+        schemeLastX = t.clientX;
+        schemeLastY = t.clientY;
+
+        if (schemeScale <= 1.001) return;
+
+        schemeTx += dx;
+        schemeTy += dy;
+        applySchemeTransform();
+      } else if (schemeTouchMode === "zoom" && e.touches.length === 2) {
+        const dist = schemePinchDist(e.touches[0], e.touches[1]);
+        const delta = (dist - schemeLastPinchDist) * 0.005;
+        schemeLastPinchDist = dist;
+
+        const newScale = schemeScale + delta;
+        zoomAtPoint(
+          (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          (e.touches[0].clientY + e.touches[1].clientY) / 2,
+          newScale
+        );
+      }
+    }, { passive: false });
+
+    window.addEventListener("touchend", (e) => {
+      if (activeView !== "scheme") return;
+      if (schemeTouchMode === "pan" && e.touches.length === 0) {
+        schemeEndX = schemeLastX;
+        schemeEndY = schemeLastY;
+        handleSwipeIfNeeded();
+      }
+      if (e.touches.length === 0) {
+        schemeTouchMode = null;
+      }
+    });
+
+    function schemePinchDist(a, b) {
+      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    }
+
+    // DOUBLE TAP / DOUBLE CLICK — zoom в точку касания / возврат в центр
+    let lastTapTime = 0;
+    overlay.addEventListener("click", (e) => {
+      if (activeView !== "scheme") return;
+      const now = Date.now();
+      const dt = now - lastTapTime;
+      lastTapTime = now;
+
+      if (dt < 300) {
+        if (schemeScale <= 1.01) {
+          zoomAtPoint(e.clientX, e.clientY, 2.0); // zoom-in
+        } else {
+          resetSchemeTransform();                 // zoom-out в центр
+        }
+      }
+    });
+  }
+
+  /* ===============================
+     ВИДЕО: HACK ДЛЯ METADATA
+  =============================== */
+  function initVideoMetadataHack() {
+    if (!videoEl) return;
+    videoEl.addEventListener("loadedmetadata", () => {
+      try {
+        videoEl.currentTime = 0.001;
+        videoEl.currentTime = 0;
+      } catch (e) {}
+    });
+  }
+
 </script>
 </body>
 </html>
