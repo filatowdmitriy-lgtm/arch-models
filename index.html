@@ -758,41 +758,41 @@ if (m.id === "doric") {
         envMapIntensity: 0.7,
     });
 
-  /* --- PBR материал для ионической капители --- */
+/* --- PBR материал для ионической капители --- */
 if (m.id === "ionic") {
 
     const texBase = new THREE.TextureLoader().load(
         "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/BaseColor.jpg"
     );
+
     const texNormal = new THREE.TextureLoader().load(
         "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Normal.jpg"
     );
+
     const texRough = new THREE.TextureLoader().load(
         "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg"
     );
 
-    // ВАЖНО: glTF использует flipY = false
+    // glTF → flipY = false
     texBase.flipY = false;
     texNormal.flipY = false;
     texRough.flipY = false;
 
-    // Цветовые пространства (правильно)
-    texBase.colorSpace = THREE.SRGBColorSpace;
+    // Цветовые пространства
+    texBase.colorSpace   = THREE.SRGBColorSpace;
     texNormal.colorSpace = THREE.LinearSRGBColorSpace;
-    texRough.colorSpace = THREE.LinearSRGBColorSpace;
+    texRough.colorSpace  = THREE.LinearSRGBColorSpace;
 
     const mat = new THREE.MeshStandardMaterial({
-        map: texBase,
-        normalMap: texNormal,
+        map:         texBase,
+        normalMap:   texNormal,
         roughnessMap: texRough,
-        metalness: 0.0,
-        roughness: 1.0,
+        metalness:   0.0,
+        roughness:   1.0,
         envMapIntensity: 0.75,
     });
 
-
-
-    // Применяем материал ко ВСЕМ Mesh внутри модели
+    // ОДИН traverse, который реально всё делает
     root.traverse((obj) => {
         if (obj.isMesh) {
             obj.material = mat;
@@ -801,7 +801,6 @@ if (m.id === "ionic") {
         }
     });
 }
-
 
         /* ---------- PIVOT ---------- */
         const box = new THREE.Box3().setFromObject(root);
