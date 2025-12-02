@@ -1,6 +1,6 @@
 // generate-manifest.js
-// Работает с ES-модульным models.js, убирая export/import
-// Выполняет только MODELS внутри песочницы Node.js
+// Работает со сложными models.js, удаляет ВСЕ import/export
+// Выполняет код в песочнице и извлекает MODELS
 
 import fs from "fs";
 import vm from "vm";
@@ -8,17 +8,23 @@ import vm from "vm";
 // === 1. Читаем models.js как текст ===
 let text = fs.readFileSync("./js/models.js", "utf8");
 
-// === 2. Удаляем все import ... from "..." ===
+// === 2. Удаляем все import ... from ... ===
 text = text.replace(/import[\s\S]*?from\s+['"][^'"]+['"];/g, "");
 
-// === 3. Заменяем "export const MODELS" → "const MODELS"
-text = text.replace(/export\s+const\s+MODELS\s*=/, "const MODELS =");
+// === 3. Удаляем ВСЕ export (export const, export function, export class) ===
+text = text.replace(/export\s+(const|let|var|function|class)\s+/g, "$1 ");
 
-// === 4. Готовим песочницу
+// === 4. На всякий случай: удаляем "export { ... }" конструкции
+text = text.replace(/export\s*\{[\s\S]*?\};?/g, "");
+
+// === 5. Подменяем "const MODELS" чтобы сохранить в sandbox
+text = text.replace(/const\s+MODELS\s*=/, "sandbox.MODELS =");
+
+// === 6. Создаём песочницу
 const sandbox = { MODELS: null };
 vm.createContext(sandbox);
 
-// === 5. Выполняем код
+// === 7. Выполняем очищенный код
 try {
   vm.runInContext(text, sandbox);
 } catch (err) {
@@ -26,15 +32,15 @@ try {
   process.exit(1);
 }
 
-// === 6. Получаем массив MODELS
+// === 8. Проверяем наличие MODELS
 const MODELS = sandbox.MODELS;
 
 if (!MODELS) {
-  console.error("❌ MODELS не найден после выполнения");
+  console.error("❌ MODELS не найден после выполнения models.js");
   process.exit(1);
 }
 
-// === 7. Формируем список файлов ===
+// === 9. Формируем список файлов для кэша
 const files = [];
 
 for (const m of MODELS) {
@@ -53,13 +59,13 @@ for (const m of MODELS) {
 
 const unique = [...new Set(files)];
 
-// === 8. Создаём manifest.json ===
 const manifest = {
   generated: new Date().toISOString(),
   total: unique.length,
   files: unique
 };
 
-fs.writeFileSync("./manifest.json", JSON.stringify(manifest, null, 2), "utf8");
+// === 10. Записываем manifest.json ===
+fs.writeFileSync("./manifest.json", JSON.stringify(manifest, null, 2));
 
-console.log("✔ Manifest создан:", manifest.total, "файлов");
+console.log("✔ manifest.json успешно создан:", manifest.total, "файлов");
