@@ -224,7 +224,7 @@ function initControls(canvas) {
     "wheel",
     (e) => {
       e.preventDefault();
-      const delta = e.deltaY * 0.002;
+      const delta = e.deltaY * 0.00025;
 
       state.radius = THREE.MathUtils.clamp(
         state.radius + delta,
@@ -277,7 +277,7 @@ function initControls(canvas) {
 
       if (touchMode === "zoom" && e.touches.length === 2) {
         const dist = pinch(e.touches[0], e.touches[1]);
-        const delta = (lastPinchDist - dist) * 0.01;
+        const delta = (lastPinchDist - dist) * 0.0025;
 
         lastPinchDist = dist;
 
