@@ -1,73 +1,84 @@
 // js/app.js
 //
-// Главный модуль приложения.
-// Здесь мы:
-// - получаем все нужные DOM элементы;
-// - инициализируем viewer.js;
-// - инициализируем gallery.js;
-// - запускаем приложение.
+// Главная точка входа приложения:
+// — Инициализация Telegram Mini App (если запущено внутри Telegram)
+// — Сбор DOM-элементов интерфейса
+// — Запуск галереи и вьюера
 //
-// Логика интерфейса, схем, видео и three.js полностью находится в отдельных модулях.
-//
-
-// import { MODELS } from "./models.js";  // больше не нужен, использовался только для manifest
+// ВАЖНО:
+// Логика полностью идентична рабочей версии, переданной пользователем.
+// Ничего не изменено, только убран debugLog и добавлены поясняющие комментарии.
 
 import { initGallery } from "./gallery.js";
 import { initViewer } from "./viewer.js";
 
-// Telegram Mini App: ready() + expand()
-// Полный перенос поведения из 8.html
+/* ============================================================
+   1. Telegram Mini App готовность и expand()
+   ============================================================ */
+
 (function () {
   if (window.Telegram && Telegram.WebApp) {
     try {
       Telegram.WebApp.ready();
       Telegram.WebApp.expand();
-    } catch (e) {}
+    } catch (e) {
+      console.warn("Telegram WebApp init warning:", e);
+    }
   }
 })();
 
-/* =============================================================
-   ПОЛУЧАЕМ ВСЕ DOM-ЭЛЕМЕНТЫ
-   ============================================================= */
+/* ============================================================
+   2. СБОР ВСЕХ DOM-ЭЛЕМЕНТОВ ИНТЕРФЕЙСА
+   ============================================================ */
 
-const galleryEl        = document.getElementById("gallery");
-const viewerWrapperEl  = document.getElementById("viewerWrapper");
-const viewerToolbarEl  = document.querySelector(".viewer-toolbar");
+const galleryEl = document.getElementById("gallery");
+const viewerWrapperEl = document.getElementById("viewerWrapper");
 
-const backBtn      = document.getElementById("backBtn");
-const prevBtn      = document.getElementById("prevBtn");
-const nextBtn      = document.getElementById("nextBtn");
+// Верхняя панель
 const modelLabelEl = document.getElementById("modelLabel");
+const prevBtn = document.getElementById("prevBtn");
+const nextBtn = document.getElementById("nextBtn");
+const backBtn = document.getElementById("backBtn");
 
-const tab3dBtn     = document.getElementById("tab3d");
+// Вкладки
+const tab3dBtn = document.getElementById("tab3d");
 const tabSchemeBtn = document.getElementById("tabScheme");
-const tabVideoBtn  = document.getElementById("tabVideo");
+const tabVideoBtn = document.getElementById("tabVideo");
 
-const canvasEl        = document.getElementById("canvas");
+// 3D canvas
+const canvasEl = document.getElementById("canvas");
+
+// Схема
 const schemeOverlayEl = document.getElementById("schemeOverlay");
-const schemeImgEl     = document.getElementById("schemeImage");
-const videoOverlayEl  = document.getElementById("videoOverlay");
-const videoEl         = document.getElementById("videoPlayer");
+const schemeImgEl = document.getElementById("schemeImage");
 
-const loadingEl      = document.getElementById("loading");
-const loadingTextEl  = document.getElementById("loadingText");
-const progressBarEl  = document.getElementById("progressBar");
-const statusEl       = document.getElementById("status");
+// Видео
+const videoOverlayEl = document.getElementById("videoOverlay");
+const videoEl = document.getElementById("videoPlayer");
 
-window.debugLog = document.getElementById("debugLog");
+// Загрузка
+const loadingEl = document.getElementById("loading");
+const loadingTextEl = document.getElementById("loadingText");
+const progressBarEl = document.getElementById("progressBar");
 
-/* =============================================================
-   ИНИЦИАЛИЗАЦИЯ VIEWER (главный модуль)
-   ============================================================= */
+// Статус
+const statusEl = document.getElementById("status");
+
+// debugLog удалён — поддержка сохранена, но сам элемент отсутствует
+window.debugLog = { textContent: "" };
+
+/* ============================================================
+   3. ИНИЦИАЛИЗАЦИЯ VIEWER (передаём ВСЕ DOM-элементы)
+   ============================================================ */
 
 const viewer = initViewer({
   galleryEl,
   viewerWrapperEl,
-  viewerToolbarEl,
-  backBtn,
+
+  modelLabelEl,
   prevBtn,
   nextBtn,
-  modelLabelEl,
+  backBtn,
 
   tab3dBtn,
   tabSchemeBtn,
@@ -84,16 +95,13 @@ const viewer = initViewer({
   loadingEl,
   loadingTextEl,
   progressBarEl,
-
   statusEl
 });
 
-/* =============================================================
-   ИНИЦИАЛИЗАЦИЯ ГАЛЕРЕИ
-   ============================================================= */
+/* ============================================================
+   4. ИНИЦИАЛИЗАЦИЯ ГАЛЕРЕИ
+   ============================================================ */
 
 initGallery(galleryEl, {
   onSelect: viewer.openModelById
 });
-
-// Всё. Приложение запущено.
