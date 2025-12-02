@@ -1,5 +1,5 @@
 // js/models.js
-// Финальная версия — нормализация как в 8.html (правильный pivot + масштаб)
+// Финальная версия — нормализация как в 8.html + КЭШИРОВАНИЕ glTF
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -48,6 +48,9 @@ export const MODELS = [
 const gltfLoader = new GLTFLoader();
 const textureLoader = new THREE.TextureLoader();
 
+// ⭐ RAW CACHE — храним оригинальный gltf.scene
+const rawCache = new Map();
+
 export function getModelMeta(id) {
   return MODELS.find(m => m.id === id) || null;
 }
@@ -88,31 +91,29 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
 
   if (onStatus) onStatus("Загрузка: " + meta.name);
 
+  // ⭐ Если модель есть в RAW-кэше → используем clone(true)
+  if (rawCache.has(modelId)) {
+    const source = rawCache.get(modelId);
+
+    const root = cloneAndNormalize(source, meta);
+    if (onStatus) onStatus("Готово (кэш)");
+    if (onProgress) onProgress(100);
+
+    return Promise.resolve({ root, meta });
+  }
+
+  // ⭐ Иначе — загружаем по сети
   return new Promise((resolve, reject) => {
     gltfLoader.load(
       meta.url,
       (gltf) => {
 
-        // ⭐ правильная структура — как в 8.html
-        const root = new THREE.Group();
-        const scene = gltf.scene;
-        root.add(scene);
+        // Сохраняем оригинальную модель в кэш (НЕ изменяем её!)
+        const sourceScene = gltf.scene;
+        rawCache.set(modelId, sourceScene);
 
-        // применяем PBR материалы
-        const mat = createMaterialFromTextures(meta.textures);
-        if (mat) {
-          scene.traverse(obj => {
-            if (obj.isMesh) {
-              obj.material = mat;
-              obj.castShadow = false;
-              obj.receiveShadow = false;
-              obj.frustumCulled = false;
-            }
-          });
-        }
-
-        // ⭐ нормализация pivot + масштаба — 1-в-1 как в 8.html
-        normalizeModel(root, scene);
+        // Создаем нормализованный экземпляр
+        const root = cloneAndNormalize(sourceScene, meta);
 
         if (onProgress) onProgress(100);
         if (onStatus) onStatus("Готово");
@@ -135,18 +136,44 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
   });
 }
 
-// ⭐ ТА САМАЯ НОРМАЛИЗАЦИЯ ИЗ 8.HTML
+// ⭐ Создаем копию модели + материалы + нормализация
+function cloneAndNormalize(sourceScene, meta) {
+  const sceneClone = sourceScene.clone(true);
+
+  // PBR материалы
+  const mat = createMaterialFromTextures(meta.textures);
+  if (mat) {
+    sceneClone.traverse(obj => {
+      if (obj.isMesh) {
+        obj.material = mat;
+        obj.castShadow = false;
+        obj.receiveShadow = false;
+        obj.frustumCulled = false;
+      }
+    });
+  }
+
+  // Оборачиваем в Group (как в 8.html)
+  const rootGroup = new THREE.Group();
+  rootGroup.add(sceneClone);
+
+  // нормализация pivot + масштаба
+  normalizeModel(rootGroup, sceneClone);
+
+  return rootGroup;
+}
+
+// ⭐ ТА САМАЯ НОРМАЛИЗАЦИЯ, КОТОРАЯ БЫЛА В 8.html
 function normalizeModel(rootGroup, gltfScene) {
-  // bounding box по rootGroup
   const box = new THREE.Box3().setFromObject(rootGroup);
 
   const center = box.getCenter(new THREE.Vector3());
   const size   = box.getSize(new THREE.Vector3());
 
-  // ⭐ центрируем ТОЛЬКО gltf.scene (как в оригинале)
+  // центрируем gltf.scene
   gltfScene.position.sub(center);
 
-  // ⭐ масштаб применяем ТОЛЬКО к контейнеру (как в оригинале)
+  // масштабируем rootGroup
   const maxSize = Math.max(size.x, size.y, size.z) || 1;
   const scale = 2.0 / maxSize;
   rootGroup.scale.setScalar(scale);
