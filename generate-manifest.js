@@ -1,38 +1,36 @@
 // generate-manifest.js
-// Работает со сложными models.js, удаляет ВСЕ import/export
-// Выполняет код в песочнице и извлекает MODELS
+// Надёжный парсер MODELS.js без импортов и экспортов
 
 import fs from "fs";
 import vm from "vm";
 
-// === 1. Читаем models.js как текст ===
+// 1. Читаем models.js как текст
 let text = fs.readFileSync("./js/models.js", "utf8");
 
-// === 2. Удаляем все import ... from ... ===
+// 2. Убираем все import ... from ...
 text = text.replace(/import[\s\S]*?from\s+['"][^'"]+['"];/g, "");
 
-// === 3. Удаляем ВСЕ export (export const, export function, export class) ===
+// 3. Убираем все export (export const, export function, export class, export { } )
 text = text.replace(/export\s+(const|let|var|function|class)\s+/g, "$1 ");
-
-// === 4. На всякий случай: удаляем "export { ... }" конструкции
 text = text.replace(/export\s*\{[\s\S]*?\};?/g, "");
 
-// === 5. Подменяем "const MODELS" чтобы сохранить в sandbox
-text = text.replace(/const\s+MODELS\s*=/, "sandbox.MODELS =");
-
-// === 6. Создаём песочницу
-const sandbox = { MODELS: null };
+// 4. Создаём песочницу
+const sandbox = {};
+sandbox.MODELS = null;
 vm.createContext(sandbox);
 
-// === 7. Выполняем очищенный код
+// 5. Добавляем в начало текстовую строку "let MODELS;" чтобы код был корректным
+const preparedCode = "let MODELS;\n" + text + "\n sandbox.MODELS = MODELS;";
+
+// 6. Выполняем очищенный код
 try {
-  vm.runInContext(text, sandbox);
+  vm.runInContext(preparedCode, sandbox);
 } catch (err) {
   console.error("❌ Ошибка выполнения models.js в песочнице:", err);
   process.exit(1);
 }
 
-// === 8. Проверяем наличие MODELS
+// 7. Получаем MODELS
 const MODELS = sandbox.MODELS;
 
 if (!MODELS) {
@@ -40,7 +38,7 @@ if (!MODELS) {
   process.exit(1);
 }
 
-// === 9. Формируем список файлов для кэша
+// 8. Формируем список файлов
 const files = [];
 
 for (const m of MODELS) {
@@ -65,7 +63,7 @@ const manifest = {
   files: unique
 };
 
-// === 10. Записываем manifest.json ===
+// 9. Пишем manifest.json
 fs.writeFileSync("./manifest.json", JSON.stringify(manifest, null, 2));
 
-console.log("✔ manifest.json успешно создан:", manifest.total, "файлов");
+console.log("✔ manifest.json создан успешно:", manifest.total, "файлов");
