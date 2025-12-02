@@ -1,30 +1,14 @@
 //
-// models.js — версия с IndexedDB-кэшем GLTF/BIN,
-// при этом поведение 8.html полностью сохранено:
-//
-// ✓ твои материалы
-// ✓ твой rootGroup
-// ✓ твоя normalizeModel()
-// ✓ твой modelCache
-// ✓ мгновенное переключение
-// ✓ правильный pivot
-// ✓ никакого parse(text)
-// ✓ GLTFLoader.load() работает как раньше
-//
-// Отличие только одно:
-// вместо URL в сеть, loader.load получает blob-URL из IndexedDB.
+// models.js — persistent cache GLTF/BIN + TEXTURES
+// pivot/scale/normalize полностью сохранены
 //
 
-
-// ============= ИМПОРТЫ =============
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-// IndexedDB кэш
+// IndexedDB cache
 import { cachedFetch } from "./cache/cachedFetch.js";
 
-
-// ============= СПИСОК МОДЕЛЕЙ =============
 export const MODELS = [
   {
     id: "doric",
@@ -44,8 +28,8 @@ export const MODELS = [
         "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Normal.jpg",
       rough:
         "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg",
-      metalness: 0.0,
-      roughness: 1.0,
+      metalness: 0,
+      roughness: 1,
       envIntensity: 0.7
     }
   },
@@ -67,79 +51,91 @@ export const MODELS = [
         "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Normal.jpg",
       rough:
         "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg",
-      metalness: 0.0,
-      roughness: 1.0,
+      metalness: 0,
+      roughness: 1,
       envIntensity: 0.75
     }
   }
 ];
 
-
-// ============= КЭШ МАТЕРИАЛОВ И МОДЕЛЕЙ =============
-const gltfLoader = new GLTFLoader();
-const textureLoader = new THREE.TextureLoader();
-const modelCache = new Map();
-
 export function getModelMeta(id) {
   return MODELS.find((m) => m.id === id) || null;
 }
 
-// ============= МАТЕРИАЛЫ (без изменений) =============
-function createMaterialFromTextures(textures) {
+// ===================
+// Кэш моделей в памяти
+// ===================
+const gltfLoader = new GLTFLoader();
+const modelCache = new Map();
+
+// ==============================
+// TEXTURE LOADER WITH PERSISTENT CACHE
+// ==============================
+async function loadTextureCached(url) {
+  const blob = await cachedFetch(url);              // persistent cache
+  const localURL = URL.createObjectURL(blob);        // blob URL
+
+  return new Promise((resolve) => {
+    new THREE.TextureLoader().load(localURL, (tex) => {
+      tex.flipY = false;
+      resolve(tex);
+    });
+  });
+}
+
+// ================================
+// MATERIAL CREATION (UPGRADED)
+// ================================
+async function createMaterialFromTextures(textures) {
   if (!textures) return null;
 
-  const texBase   = textures.base   ? textureLoader.load(textures.base)   : null;
-  const texNormal = textures.normal ? textureLoader.load(textures.normal) : null;
-  const texRough  = textures.rough  ? textureLoader.load(textures.rough)  : null;
+  const texBase   = textures.base   ? await loadTextureCached(textures.base)   : null;
+  const texNormal = textures.normal ? await loadTextureCached(textures.normal) : null;
+  const texRough  = textures.rough  ? await loadTextureCached(textures.rough)  : null;
 
-  if (texBase)   { texBase.flipY = false; texBase.colorSpace = THREE.SRGBColorSpace; }
-  if (texNormal) { texNormal.flipY = false; texNormal.colorSpace = THREE.LinearSRGBColorSpace; }
-  if (texRough)  { texRough.flipY = false; texRough.colorSpace = THREE.LinearSRGBColorSpace; }
+  if (texBase)   texBase.colorSpace   = THREE.SRGBColorSpace;
+  if (texNormal) texNormal.colorSpace = THREE.LinearSRGBColorSpace;
+  if (texRough)  texRough.colorSpace  = THREE.LinearSRGBColorSpace;
 
   return new THREE.MeshStandardMaterial({
-    map: texBase || null,
-    normalMap: texNormal || null,
-    roughnessMap: texRough || null,
-    metalness: textures.metalness ?? 0.0,
-    roughness: textures.roughness ?? 1.0,
+    map:          texBase,
+    normalMap:    texNormal,
+    roughnessMap: texRough,
+    metalness:    textures.metalness ?? 0,
+    roughness:    textures.roughness ?? 1,
     envMapIntensity: textures.envIntensity ?? 0.7
   });
 }
 
-
-// =====================================================
-//                ГЛАВНАЯ ФУНКЦИЯ ЗАГРУЗКИ
-// =====================================================
+// ================================
+// LOAD MODEL (GLTF + BIN CACHE)
+// ================================
 export function loadModel(modelId, { onProgress, onStatus } = {}) {
   const meta = getModelMeta(modelId);
   if (!meta) return Promise.reject("No model: " + modelId);
 
-  // ⭐ Мгновенный кэш (твоя логика)
+  // instant switching cache
   if (modelCache.has(modelId)) {
-    if (onStatus) onStatus("Готово (кэш)");
-    if (onProgress) onProgress(100);
+    onStatus?.("Готово (кэш)");
+    onProgress?.(100);
     return Promise.resolve({ root: modelCache.get(modelId), meta });
   }
 
-  if (onStatus) onStatus("Загрузка: " + meta.name);
+  onStatus?.("Загрузка: " + meta.name);
 
   const url = meta.url;
   const binUrl = url.replace(".gltf", ".bin");
 
   return new Promise(async (resolve, reject) => {
     try {
-      //
-      // 1) ——— СКАЧИВАЕМ glTF И BIN ЧЕРЕЗ PERSISTENT КЭШ ————
-      //
+      // persistent cache for gltf/bin
       const gltfBlob = await cachedFetch(url);
       const binBlob  = await cachedFetch(binUrl);
 
       const gltfObjectURL = URL.createObjectURL(gltfBlob);
       const binObjectURL  = URL.createObjectURL(binBlob);
 
-      //
-      // 2) ——— Подменяем BIN для GLTFLoader ———
-      //
+      // override bin file
       const manager = new THREE.LoadingManager();
       manager.setURLModifier((u) => {
         if (u.endsWith(".bin")) return binObjectURL;
@@ -148,21 +144,18 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
 
       const loader = new GLTFLoader(manager);
 
-      //
-      // 3) ——— ТВОЙ ИСХОДНЫЙ КОД gltfLoader.load(), НО С BLOB-URL ————
-      //
       loader.load(
         gltfObjectURL,
 
-        (gltf) => {
+        async (gltf) => {
           const scene = gltf.scene;
 
-          // Твой rootGroup
+          // group for normalization
           const rootGroup = new THREE.Group();
           rootGroup.add(scene);
 
-          // Твои материалы
-          const mat = createMaterialFromTextures(meta.textures);
+          // apply PBR material (cached!)
+          const mat = await createMaterialFromTextures(meta.textures);
           if (mat) {
             scene.traverse((obj) => {
               if (obj.isMesh) {
@@ -174,49 +167,44 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
             });
           }
 
-          // Твоя нормализация pivot/масштаба
+          // pivot/scale correct normalization
           normalizeModel(rootGroup, scene);
 
-          // Твой кэш моделей
           modelCache.set(modelId, rootGroup);
 
-          if (onProgress) onProgress(100);
-          if (onStatus) onStatus("Готово");
+          onProgress?.(100);
+          onStatus?.("Готово");
 
           resolve({ root: rootGroup, meta });
         },
 
-        // Твой прогресс
         (xhr) => {
-          if (xhr.lengthComputable && onProgress) {
-            onProgress((xhr.loaded / xhr.total) * 100);
+          if (xhr.lengthComputable) {
+            onProgress?.((xhr.loaded / xhr.total) * 100);
           }
         },
 
-        // Твоя ошибка
         (err) => {
           console.error(err);
-          if (onStatus) onStatus("Ошибка загрузки");
+          onStatus?.("Ошибка загрузки");
           reject(err);
         }
       );
     } catch (err) {
       console.error("cachedFetch error:", err);
-      if (onStatus) onStatus("Ошибка загрузки");
+      onStatus?.("Ошибка загрузки");
       reject(err);
     }
   });
 }
 
-
-// =====================================================
-//       НОРМАЛИЗАЦИЯ (твоя, без изменений!)
-// =====================================================
+// ================================
+// NORMALIZATION — untouched
+// ================================
 function normalizeModel(rootGroup, gltfScene) {
   const box = new THREE.Box3().setFromObject(rootGroup);
-
   const center = box.getCenter(new THREE.Vector3());
-  const size   = box.getSize(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
 
   gltfScene.position.sub(center);
 
