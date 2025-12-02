@@ -1,60 +1,52 @@
 // generate-manifest.js
-// Запускается в GitHub Actions
-// Генерирует manifest.json на основе MODELS.js
+// Извлекает MODELS из models.js БЕЗ импорта three.js
+// Работает в GitHub Actions
 
 import fs from "fs";
-import { fileURLToPath } from "url";
-import { dirname } from "path";
 
-// Абсолютный путь к проекту
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// Читаем models.js как простой текст
+const text = fs.readFileSync("./js/models.js", "utf8");
 
-// Загружаем MODELS.js как модуль
-const modelsModule = await import(__dirname + "/js/models.js");
-const MODELS = modelsModule.MODELS;
+// Ищем массив MODELS (формат export const MODELS = [ ... ])
+const match = text.match(/export\s+const\s+MODELS\s*=\s*(\[[\s\S]*?\]);/);
 
+if (!match) {
+  console.error("❌ MODELS не найден в models.js");
+  process.exit(1);
+}
+
+// Это JS-массив, нужно превратить его в JSON
+let arrayText = match[1]
+  .replace(/(\w+)\s*:/g, '"$1":') // ключи → строки
+  .replace(/'([^']+)'/g, '"$1"'); // одинарные → двойные кавычки
+
+let MODELS = JSON.parse(arrayText);
+
+// Генерируем список файлов
 const files = [];
 
-for (const model of MODELS) {
-  // GLTF
-  files.push(model.url);
+for (const m of MODELS) {
+  files.push(m.url);
+  files.push(m.url.replace(".gltf", ".bin"));
 
-  // BIN
-  files.push(model.url.replace(".gltf", ".bin"));
-
-  // Textures
-  if (model.textures) {
+  if (m.textures) {
     for (const key of ["base", "normal", "rough"]) {
-      if (model.textures[key]) files.push(model.textures[key]);
+      if (m.textures[key]) files.push(m.textures[key]);
     }
   }
 
-  // Schemes
-  if (model.schemes) {
-    files.push(...model.schemes);
-  }
-
-  // Video
-  if (model.video) {
-    files.push(model.video);
-  }
+  if (m.schemes) files.push(...m.schemes);
+  if (m.video) files.push(m.video);
 }
 
-// Убираем дубликаты
 const unique = [...new Set(files)];
 
-const output = {
+const manifest = {
   generated: new Date().toISOString(),
   total: unique.length,
   files: unique
 };
 
-// Сохраняем manifest.json в корень
-fs.writeFileSync(
-  __dirname + "/manifest.json",
-  JSON.stringify(output, null, 2),
-  "utf8"
-);
+fs.writeFileSync("manifest.json", JSON.stringify(manifest, null, 2), "utf8");
 
-console.log("✔ manifest.json сгенерирован:", unique.length, "файлов");
+console.log("✔ manifest.json создан:", manifest.total, "файлов");
