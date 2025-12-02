@@ -1,13 +1,25 @@
 //
-// models.js — persistent cache GLTF/BIN + TEXTURES
-// pivot/scale/normalize полностью сохранены
+// js/models.js
+//
+// Модуль отвечает за:
+// - список моделей MODELS (метаданные, пути к glTF, схемам, видео, текстурам);
+// - загрузку моделей из glTF (GLTFLoader);
+// - кэширование:
+//     • в памяти (быстрое переключение между моделями);
+//     • в IndexedDB (GLTF + BIN + PBR-текстуры для повторных запусков);
+// - создание PBR-материала из текстур.
+// Никакой логики three.js сцены, камеры и UI здесь нет.
 //
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-// IndexedDB cache
+// Persistent-кэш (IndexedDB) — общий helper
 import { cachedFetch } from "./cache/cachedFetch.js";
+
+/* ============================================================
+   СПИСОК МОДЕЛЕЙ
+   ============================================================ */
 
 export const MODELS = [
   {
@@ -58,22 +70,26 @@ export const MODELS = [
   }
 ];
 
+/** Получить мету модели по id. */
 export function getModelMeta(id) {
   return MODELS.find((m) => m.id === id) || null;
 }
 
-// ===================
-// Кэш моделей в памяти
-// ===================
+// Лоадер и кэш в памяти (для быстрого переключения)
 const gltfLoader = new GLTFLoader();
 const modelCache = new Map();
 
-// ==============================
-// TEXTURE LOADER WITH PERSISTENT CACHE
-// ==============================
+/* ============================================================
+   ЗАГРУЗКА ТЕКСТУР ЧЕРЕЗ PERSISTENT-КЭШ
+   ============================================================ */
+
+/**
+ * Загружает текстуру через cachedFetch + создаёт THREE.Texture.
+ * Используется для baseColor / normal / roughness.
+ */
 async function loadTextureCached(url) {
-  const blob = await cachedFetch(url);              // persistent cache
-  const localURL = URL.createObjectURL(blob);        // blob URL
+  const blob = await cachedFetch(url);
+  const localURL = URL.createObjectURL(blob);
 
   return new Promise((resolve) => {
     new THREE.TextureLoader().load(localURL, (tex) => {
@@ -83,9 +99,10 @@ async function loadTextureCached(url) {
   });
 }
 
-// ================================
-// MATERIAL CREATION (UPGRADED)
-// ================================
+/**
+ * Создаёт MeshStandardMaterial из текстурной меты.
+ * Все текстуры приходят из persistent-кэша.
+ */
 async function createMaterialFromTextures(textures) {
   if (!textures) return null;
 
@@ -98,44 +115,51 @@ async function createMaterialFromTextures(textures) {
   if (texRough)  texRough.colorSpace  = THREE.LinearSRGBColorSpace;
 
   return new THREE.MeshStandardMaterial({
-    map:          texBase,
-    normalMap:    texNormal,
-    roughnessMap: texRough,
-    metalness:    textures.metalness ?? 0,
-    roughness:    textures.roughness ?? 1,
+    map:           texBase,
+    normalMap:     texNormal,
+    roughnessMap:  texRough,
+    metalness:     textures.metalness ?? 0,
+    roughness:     textures.roughness ?? 1,
     envMapIntensity: textures.envIntensity ?? 0.7
   });
 }
 
-// ================================
-// LOAD MODEL (GLTF + BIN CACHE)
-// ================================
+/* ============================================================
+   ГЛАВНАЯ ФУНКЦИЯ ЗАГРУЗКИ МОДЕЛИ
+   ============================================================ */
+/**
+ * Загружает модель по id.
+ * - сначала проверяет кэш в памяти (modelCache);
+ * - затем грузит glTF+BIN через IndexedDB-кэш;
+ * - нормализует модель по размеру и центру;
+ * - назначает PBR-материал.
+ */
 export function loadModel(modelId, { onProgress, onStatus } = {}) {
   const meta = getModelMeta(modelId);
   if (!meta) return Promise.reject("No model: " + modelId);
 
-  // instant switching cache
+  // 1) Быстрый кэш в памяти — мгновенное переключение
   if (modelCache.has(modelId)) {
-    onStatus?.("Готово (кэш)");
-    onProgress?.(100);
+    if (onStatus) onStatus("Готово (кэш)");
+    if (onProgress) onProgress(100);
     return Promise.resolve({ root: modelCache.get(modelId), meta });
   }
 
-  onStatus?.("Загрузка: " + meta.name);
+  if (onStatus) onStatus("Загрузка: " + meta.name);
 
   const url = meta.url;
   const binUrl = url.replace(".gltf", ".bin");
 
   return new Promise(async (resolve, reject) => {
     try {
-      // persistent cache for gltf/bin
+      // 2) Persistent-кэш для glTF и BIN
       const gltfBlob = await cachedFetch(url);
       const binBlob  = await cachedFetch(binUrl);
 
       const gltfObjectURL = URL.createObjectURL(gltfBlob);
       const binObjectURL  = URL.createObjectURL(binBlob);
 
-      // override bin file
+      // Подмена BIN-файла на локальный blob
       const manager = new THREE.LoadingManager();
       manager.setURLModifier((u) => {
         if (u.endsWith(".bin")) return binObjectURL;
@@ -144,17 +168,18 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
 
       const loader = new GLTFLoader(manager);
 
+      // 3) Логика максимально близка к твоей исходной (8.html)
       loader.load(
         gltfObjectURL,
 
         async (gltf) => {
           const scene = gltf.scene;
 
-          // group for normalization
+          // Оборачиваем в rootGroup для нормализации
           const rootGroup = new THREE.Group();
           rootGroup.add(scene);
 
-          // apply PBR material (cached!)
+          // PBR-материал (кэшируемые текстуры)
           const mat = await createMaterialFromTextures(meta.textures);
           if (mat) {
             scene.traverse((obj) => {
@@ -167,47 +192,51 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
             });
           }
 
-          // pivot/scale correct normalization
+          // Нормализация по центру и масштабу
           normalizeModel(rootGroup, scene);
 
+          // Кладём в кэш в памяти — для мгновенного переключения
           modelCache.set(modelId, rootGroup);
 
-          onProgress?.(100);
-          onStatus?.("Готово");
+          if (onProgress) onProgress(100);
+          if (onStatus) onStatus("Готово");
 
           resolve({ root: rootGroup, meta });
         },
 
         (xhr) => {
-          if (xhr.lengthComputable) {
-            onProgress?.((xhr.loaded / xhr.total) * 100);
+          if (xhr.lengthComputable && onProgress) {
+            onProgress((xhr.loaded / xhr.total) * 100);
           }
         },
 
         (err) => {
           console.error(err);
-          onStatus?.("Ошибка загрузки");
+          if (onStatus) onStatus("Ошибка загрузки");
           reject(err);
         }
       );
     } catch (err) {
       console.error("cachedFetch error:", err);
-      onStatus?.("Ошибка загрузки");
+      if (onStatus) onStatus("Ошибка загрузки");
       reject(err);
     }
   });
 }
 
-// ================================
-// NORMALIZATION — untouched
-// ================================
+/* ============================================================
+   НОРМАЛИЗАЦИЯ МОДЕЛИ (pivot + scale) — как в 8.html
+   ============================================================ */
 function normalizeModel(rootGroup, gltfScene) {
   const box = new THREE.Box3().setFromObject(rootGroup);
-  const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
 
+  const center = box.getCenter(new THREE.Vector3());
+  const size   = box.getSize(new THREE.Vector3());
+
+  // Сдвигаем геометрию так, чтобы центр оказался в (0,0,0)
   gltfScene.position.sub(center);
 
+  // Масштабируем так, чтобы максимальный размер был ≈ 2 единицы
   const maxSize = Math.max(size.x, size.y, size.z) || 1;
   const scale = 2.0 / maxSize;
   rootGroup.scale.setScalar(scale);
