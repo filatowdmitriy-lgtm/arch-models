@@ -1,0 +1,20 @@
+{
+  "generated": "2025-12-02T17:53:52.935Z",
+  "total": 14,
+  "files": [
+    "https://filatowdmitriy-lgtm.github.io/arch-models/models/doric.gltf",
+    "https://filatowdmitriy-lgtm.github.io/arch-models/models/doric.bin",
+    "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/BaseColor.jpg",
+    "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Normal.jpg",
+    "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg",
+    "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/scheme1.jpg",
+    "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/test_video.mp4",
+    "https://filatowdmitriy-lgtm.github.io/arch-models/models/ionic.gltf",
+    "https://filatowdmitriy-lgtm.github.io/arch-models/models/ionic.bin",
+    "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/BaseColor.jpg",
+    "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Normal.jpg",
+    "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg",
+    "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/scheme1.jpg",
+    "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/test_video.mp4"
+  ]
+}
