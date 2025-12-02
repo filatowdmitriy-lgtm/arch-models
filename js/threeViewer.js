@@ -1,13 +1,12 @@
 // js/threeViewer.js
 //
-// Финальная версия, совместимая с исходным 8.html,
-// но улучшенная: правильный пивот модели, корректное центрирование,
-// и никакие трансформации модели НЕ нарушаются.
-//
-// Камера крутится вокруг state.center,
-// который вычисляется из bounding sphere реальной модели.
-//
-// НИКАКИХ манипуляций с моделью (scale/offset) — как в твоём оригинале.
+// Финальная версия 3D-вьюера.
+// Особенности:
+// - Модель НЕ трогаем (без scale/offset/normalize)
+// - Центр орбиты рассчитываем ПО ГЕОМЕТРИИ модели (Box3.getCenter)
+// - Расстояние до камеры по радиусу bounding sphere
+// - Вращение, тач, зум — точная копия 8.html
+// - Никаких артефактов, ничего не разлетается
 //
 
 import * as THREE from "three";
@@ -16,9 +15,9 @@ let scene = null;
 let camera = null;
 let renderer = null;
 
-/* ==============================
+/* ========================================
    СОСТОЯНИЕ КАМЕРЫ
-   ============================== */
+   ======================================== */
 
 const state = {
   radius: 4.5,
@@ -30,14 +29,14 @@ const state = {
   targetRotX: 0.10,
   targetRotY: 0.00,
 
-  center: new THREE.Vector3(0, 0, 0) // центр модели
+  center: new THREE.Vector3(0, 0, 0)  // центр модели
 };
 
 let currentModel = null;
 
-/* ==============================
+/* ========================================
    initThree(canvas)
-   ============================== */
+   ======================================== */
 
 export function initThree(canvas) {
   // === СЦЕНА ===
@@ -64,7 +63,7 @@ export function initThree(canvas) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.BasicShadowMap;
 
-  // === ОСВЕЩЕНИЕ (1:1 как в 8.html) ===
+  // === ОСВЕТИМ СЦЕНУ (1:1 как в 8.html) ===
   const zenith = new THREE.DirectionalLight(0xf5f8ff, 0.0);
   zenith.position.set(0, 11, 2);
   scene.add(zenith);
@@ -92,10 +91,10 @@ export function initThree(canvas) {
   const hemi = new THREE.HemisphereLight(0xffffff, 0x0a0a0a, 0.07);
   scene.add(hemi);
 
-  // === GESTURES (1:1 копия поведение из 8.html) ===
+  // === ЖЕСТЫ ===
   initControls(canvas);
 
-  // === ФРЕЙМ-АНИМАЦИЯ ===
+  // === АНИМАЦИЯ ===
   renderer.setAnimationLoop(() => {
     state.rotX += (state.targetRotX - state.rotX) * 0.22;
     state.rotY += (state.targetRotY - state.rotY) * 0.22;
@@ -105,41 +104,45 @@ export function initThree(canvas) {
   });
 }
 
-/* ==============================
+/* ========================================
    setModel(root)
-   ============================== */
+   ======================================== */
 
 export function setModel(root) {
   if (!scene) return;
 
-  if (currentModel) {
-    scene.remove(currentModel);
-  }
+  // Удаляем прежнюю модель
+  if (currentModel) scene.remove(currentModel);
 
   currentModel = root;
   scene.add(currentModel);
 
-  // Сброс вращения
+  // Сброс вращения как в оригинале
   state.targetRotX = 0.10;
   state.targetRotY = 0.00;
 
+  // Вычисляем центр и дистанцию камеры
   fitCameraToModel(root);
 }
 
-/* ==============================
+/* ========================================
    fitCameraToModel(root)
-   ============================== */
+   ======================================== */
 
 function fitCameraToModel(root) {
+  // Считаем bounding box
   const box = new THREE.Box3().setFromObject(root);
+
+  // ГЕОМЕТРИЧЕСКИЙ центр модели
+  box.getCenter(state.center);
+
+  // Радиус модели
   const sphere = box.getBoundingSphere(new THREE.Sphere());
+  const baseRadius = sphere.radius || 2.0;
 
-  // Сохраняем центр модели
-  state.center.copy(sphere.center);
-
-  // Радиус камеры
+  // Вычисляем дистанцию камеры
   const fovRad = camera.fov * Math.PI / 180;
-  let dist = sphere.radius / Math.sin(fovRad / 2);
+  let dist = baseRadius / Math.sin(fovRad / 2);
 
   // Мобильный множитель (как в 8.html)
   const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -151,17 +154,18 @@ function fitCameraToModel(root) {
   state.maxRadius = dist * 6.0;
 }
 
-/* ==============================
+/* ========================================
    CAMERA MATH
-   ============================== */
+   ======================================== */
 
 function updateCameraPosition() {
   const r = state.radius;
+
   const x = r * Math.sin(state.rotY) * Math.cos(state.rotX);
   const z = r * Math.cos(state.rotY) * Math.cos(state.rotX);
   const y = r * Math.sin(state.rotX);
 
-  // Камера ставится относительно центра модели
+  // Центрируем орбиту вокруг state.center
   camera.position.set(
     state.center.x + x,
     state.center.y + y,
@@ -171,9 +175,9 @@ function updateCameraPosition() {
   camera.lookAt(state.center);
 }
 
-/* ==============================
+/* ========================================
    resize()
-   ============================== */
+   ======================================== */
 
 export function resize() {
   if (!renderer || !camera) return;
@@ -184,18 +188,19 @@ export function resize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-/* ==============================
-   GESTURES (орбита / зум)
-   ============================== */
+/* ========================================
+   УПРАВЛЕНИЕ (мышь + тач)
+   ======================================== */
 
 function initControls(canvas) {
   let isDragging = false;
-  let lastX = 0,
-    lastY = 0;
+  let lastX = 0, lastY = 0;
+
   let touchMode = null;
   let lastPinchDist = 0;
 
-  /* ---- MOUSE ---- */
+  /* ----------- MOUSE ----------- */
+
   canvas.addEventListener("mousedown", (e) => {
     isDragging = true;
     lastX = e.clientX;
@@ -218,83 +223,74 @@ function initControls(canvas) {
     state.targetRotY += dx * -0.005;
     state.targetRotX += dy * 0.005;
 
+    // Ограничения наклона как в 8.html
     state.targetRotX = Math.max(
       -Math.PI / 2 + 0.2,
       Math.min(Math.PI / 2 - 0.2, state.targetRotX)
     );
   });
 
-  canvas.addEventListener(
-    "wheel",
-    (e) => {
-      e.preventDefault();
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
 
-      const delta = e.deltaY * 0.002;
+    const delta = e.deltaY * 0.002;
+
+    state.radius = THREE.MathUtils.clamp(
+      state.radius + delta,
+      state.minRadius,
+      state.maxRadius
+    );
+  }, { passive: false });
+
+  /* ----------- TOUCH ----------- */
+
+  canvas.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+
+    if (e.touches.length === 1) {
+      touchMode = "rotate";
+      lastX = e.touches[0].clientX;
+      lastY = e.touches[0].clientY;
+
+    } else if (e.touches.length === 2) {
+      touchMode = "zoom";
+      lastPinchDist = pinch(e.touches[0], e.touches[1]);
+    }
+  }, { passive: false });
+
+  canvas.addEventListener("touchmove", (e) => {
+    if (!touchMode) return;
+    e.preventDefault();
+
+    if (touchMode === "rotate" && e.touches.length === 1) {
+      const t = e.touches[0];
+      const dx = t.clientX - lastX;
+      const dy = t.clientY - lastY;
+
+      lastX = t.clientX;
+      lastY = t.clientY;
+
+      state.targetRotY += dx * -0.008;
+      state.targetRotX += dy * 0.008;
+
+      state.targetRotX = Math.max(
+        -Math.PI / 2 + 0.2,
+        Math.min(Math.PI / 2 - 0.2, state.targetRotX)
+      );
+
+    } else if (touchMode === "zoom" && e.touches.length === 2) {
+      const dist = pinch(e.touches[0], e.touches[1]);
+      const delta = (lastPinchDist - dist) * 0.01;
+
+      lastPinchDist = dist;
 
       state.radius = THREE.MathUtils.clamp(
         state.radius + delta,
         state.minRadius,
         state.maxRadius
       );
-    },
-    { passive: false }
-  );
-
-  /* ---- TOUCH ---- */
-  canvas.addEventListener(
-    "touchstart",
-    (e) => {
-      e.preventDefault();
-
-      if (e.touches.length === 1) {
-        touchMode = "rotate";
-        lastX = e.touches[0].clientX;
-        lastY = e.touches[0].clientY;
-      } else if (e.touches.length === 2) {
-        touchMode = "zoom";
-        lastPinchDist = pinch(e.touches[0], e.touches[1]);
-      }
-    },
-    { passive: false }
-  );
-
-  canvas.addEventListener(
-    "touchmove",
-    (e) => {
-      if (!touchMode) return;
-      e.preventDefault();
-
-      if (touchMode === "rotate" && e.touches.length === 1) {
-        const t = e.touches[0];
-
-        const dx = t.clientX - lastX;
-        const dy = t.clientY - lastY;
-
-        lastX = t.clientX;
-        lastY = t.clientY;
-
-        state.targetRotY += dx * -0.008;
-        state.targetRotX += dy * 0.008;
-
-        state.targetRotX = Math.max(
-          -Math.PI / 2 + 0.2,
-          Math.min(Math.PI / 2 - 0.2, state.targetRotX)
-        );
-      } else if (touchMode === "zoom" && e.touches.length === 2) {
-        const dist = pinch(e.touches[0], e.touches[1]);
-        const delta = (lastPinchDist - dist) * 0.01;
-
-        lastPinchDist = dist;
-
-        state.radius = THREE.MathUtils.clamp(
-          state.radius + delta,
-          state.minRadius,
-          state.maxRadius
-        );
-      }
-    },
-    { passive: false }
-  );
+    }
+  }, { passive: false });
 
   window.addEventListener("touchend", () => {
     touchMode = null;
