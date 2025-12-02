@@ -1,131 +1,85 @@
-/* ============================================================
-   gallery.js
-   МОДУЛЬ: галерея моделей + навигация + выбор модели
-   ============================================================ */
+// js/gallery.js
+//
+// Модуль отвечает за:
+// - рендеринг галереи моделей из MODELS,
+// - создание карточек,
+// - обработку кликов,
+// - вызов колбэка onSelect(modelId).
+//
+// НЕ содержит three.js, viewer, UI вкладок и т.п.
+// НЕ знает о 3D, схемах, видео.
+// Лишь выводит список моделей и даёт сигнал о выборе.
+//
 
 import { MODELS } from "./models.js";
 
-/* ------------------------------------------------------------
-   1) Внешние обработчики (устанавливаются через setHandlers)
-   ------------------------------------------------------------ */
-
-let onModelOpenHandler = null;    // вызывается при клике на карточку
-let onNavigateHandler   = null;   // вызывается при Next / Prev
-
 /**
- * viewer вызывает это, чтобы связать галерею с логикой вьюера.
+ * Инициализация галереи.
+ *
+ * @param {HTMLElement} containerEl — DOM-элемент галереи (#gallery)
+ * @param {object} options
+ * @param {function(string):void} options.onSelect — вызывается при клике по карточке
  */
-export function setGalleryHandlers({ onOpenModel, onNavigate }) {
-  onModelOpenHandler = onOpenModel || null;
-  onNavigateHandler  = onNavigate || null;
-}
+export function initGallery(containerEl, { onSelect }) {
+  if (!containerEl) {
+    console.error("initGallery: containerEl is null");
+    return;
+  }
 
-/* ------------------------------------------------------------
-   2) Элементы DOM
-   ------------------------------------------------------------ */
+  if (typeof onSelect !== "function") {
+    console.error("initGallery: onSelect must be a function");
+    return;
+  }
 
-let galleryEl = null;
+  // Очистка контейнера
+  containerEl.innerHTML = "";
 
-/**
- * galleryEl — это <div id="gallery">
- */
-export function initGallery(domElement) {
-  galleryEl = domElement;
-  buildGallery();
-}
-
-/* ------------------------------------------------------------
-   3) Построение галереи карточек
-   ------------------------------------------------------------ */
-
-export function buildGallery() {
-  if (!galleryEl) return;
-
-  galleryEl.innerHTML = "";
-
+  // Рендер карточек
   MODELS.forEach((m) => {
     const card = document.createElement("div");
     card.className = "model-card";
     card.dataset.model = m.id;
 
-    /* превью */
+    // === Превью (первая буква) ===
     const thumb = document.createElement("div");
     thumb.className = "model-thumb";
     thumb.textContent = m.thumbLetter || m.name.charAt(0);
 
-    /* название */
+    // === Заголовок ===
     const caption = document.createElement("div");
     caption.className = "model-caption";
     caption.textContent = m.name;
 
-    /* описание */
+    // === Описание ===
     const desc = document.createElement("div");
     desc.className = "model-desc";
     desc.textContent = m.desc;
 
+    // === Добавляем в DOM ===
     card.appendChild(thumb);
     card.appendChild(caption);
     card.appendChild(desc);
 
-    /* при клике — открытие модели */
+    // === Обработчик клика ===
     card.addEventListener("click", () => {
-      if (onModelOpenHandler) {
-        onModelOpenHandler(m.id);
-      }
+      onSelect(m.id);
     });
 
-    galleryEl.appendChild(card);
+    containerEl.appendChild(card);
   });
 }
 
-/* ------------------------------------------------------------
-   4) Управление видимостью галереи
-   ------------------------------------------------------------ */
-
-export function showGallery() {
-  if (galleryEl) {
-    galleryEl.classList.remove("hidden");
-  }
-}
-
-export function hideGallery() {
-  if (galleryEl) {
-    galleryEl.classList.add("hidden");
-  }
-}
-
-/* ------------------------------------------------------------
-   5) Навигация «следующая / предыдущая»
-   ------------------------------------------------------------ */
-
-export function getModelIndex(id) {
-  return MODELS.findIndex((m) => m.id === id);
-}
-
-export function getNextModelId(currentId) {
-  const idx = getModelIndex(currentId);
-  if (idx === -1) return MODELS[0].id;
-  return MODELS[(idx + 1) % MODELS.length].id;
-}
-
-export function getPrevModelId(currentId) {
-  const idx = getModelIndex(currentId);
-  if (idx === -1) return MODELS[0].id;
-  return MODELS[(idx - 1 + MODELS.length) % MODELS.length].id;
+/**
+ * Показать галерею (как в 8.html → remove "hidden")
+ */
+export function showGallery(containerEl, viewerWrapperEl) {
+  if (containerEl) containerEl.classList.remove("hidden");
+  if (viewerWrapperEl) viewerWrapperEl.classList.remove("visible");
 }
 
 /**
- * Вьюер вызывает это, чтобы выполнить переход к следующей модели.
+ * Скрыть галерею (добавление "hidden")
  */
-export function navigateNext(currentId) {
-  const nextId = getNextModelId(currentId);
-  if (onNavigateHandler) onNavigateHandler(nextId);
-}
-
-/**
- * Вьюер вызывает это, чтобы выполнить переход к предыдущей модели.
- */
-export function navigatePrev(currentId) {
-  const prevId = getPrevModelId(currentId);
-  if (onNavigateHandler) onNavigateHandler(prevId);
+export function hideGallery(containerEl) {
+  if (containerEl) containerEl.classList.add("hidden");
 }
