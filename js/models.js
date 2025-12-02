@@ -154,8 +154,15 @@ function createMaterialFromTextures(textures) {
  */
 function normalizeModel(root) {
   const box = new THREE.Box3().setFromObject(root);
-  const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
+  const maxSize = Math.max(size.x, size.y, size.z);
+
+  if (maxSize > 0) {
+    const base = 2.0;
+    const scale = base / maxSize;
+    root.scale.setScalar(scale);
+  }
+
 
   // Сдвигаем сцену так, чтобы центр оказался в (0, 0, 0)
   root.traverse(obj => {
