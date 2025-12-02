@@ -1,32 +1,21 @@
 // js/models.js
-// Модуль, отвечающий за:
-// - список MODELS (метаданные всех архитектурных деталей);
-// - загрузку GLTF-моделей;
-// - применение PBR-текстур (если заданы);
-// - нормализацию модели по размеру (центрирование + масштаб).
 //
-// ВАЖНО:
-// - Здесь НЕТ UI (loading, статус и т.п.).
-// - Здесь НЕТ камеры, жестов, трёхмерной сцены.
-// - Модуль просто возвращает готовый THREE.Group для рендера.
+// Финальная стабильная версия, полностью идентичная поведению 8.html,
+// но в модульной структуре.
 //
-// Как использовать:
-//   import { MODELS, loadModel, getModelMeta } from "./models.js";
-//
-//   const meta = getModelMeta("doric");
-//   const { root } = await loadModel("doric", {
-//     onProgress: (percent) => { ... },
-//     onStatus: (text) => { ... }
-//   });
-//   threeViewer.setModel(root); // threeViewer уже сам подгонит камеру.
+// - gltf.scene используется напрямую
+// - никакого normalize / scale / Group()
+// - никакого clone(true)
+// - повторная загрузка через loader.load()
+// - PBR-текстуры применяются аккуратно
 //
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-/* ===============================
-   СПИСОК МОДЕЛЕЙ (метаданные)
-   =============================== */
+/* ========================================
+   СПИСОК МОДЕЛЕЙ
+   ======================================== */
 
 export const MODELS = [
   {
@@ -35,20 +24,14 @@ export const MODELS = [
     desc: "Архаический строгий стиль.",
     url: "https://filatowdmitriy-lgtm.github.io/arch-models/models/doric.gltf",
     thumbLetter: "D",
-
-    // Схемы, которые будут показываться во вкладке "Построение"
     schemes: [
       "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/scheme1.jpg"
     ],
-
-    // Видео для вкладки "Видео"
     video: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/test_video.mp4",
-
-    // PBR-текстуры для применения поверх GLTF (необязательный блок)
     textures: {
-      base: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/BaseColor.jpg",
+      base:   "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/BaseColor.jpg",
       normal: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Normal.jpg",
-      rough: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg",
+      rough:  "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg",
       metalness: 0.0,
       roughness: 1.0,
       envIntensity: 0.7
@@ -58,17 +41,16 @@ export const MODELS = [
     id: "ionic",
     name: "Ионическая капитель",
     desc: "Классический греческий ордер, витые волюты.",
-    url: "https://filatowdmitriy-lgtm.github.io/arch-models/models/ionic.gltf",
+    url:  "https://filatowdmitriy-lgtm.github.io/arch-models/models/ionic.gltf",
     thumbLetter: "I",
     schemes: [
       "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/scheme1.jpg"
     ],
     video: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/test_video.mp4",
-
     textures: {
-      base: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/BaseColor.jpg",
+      base:   "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/BaseColor.jpg",
       normal: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Normal.jpg",
-      rough: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg",
+      rough:  "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg",
       metalness: 0.0,
       roughness: 1.0,
       envIntensity: 0.75
@@ -76,31 +58,23 @@ export const MODELS = [
   }
 ];
 
-/* ===============================
-   КЭШ ЗАГРУЖЕННЫХ МОДЕЛЕЙ
-   =============================== */
+/* ========================================
+   КЭШ (хранит URL для ускорения повторной загрузки)
+   ======================================== */
 
-const cache = {}; // { [modelId]: THREE.Group }
-
-/* ===============================
-   УТИЛИТЫ ВНУТРИ МОДУЛЯ
-   =============================== */
+const cache = {};   // cache[id] = url
 
 const gltfLoader = new GLTFLoader();
 const textureLoader = new THREE.TextureLoader();
 
-/**
- * Найти метаданные модели по id.
- * Возвращает объект из MODELS или null.
- */
-export function getModelMeta(modelId) {
-  return MODELS.find(m => m.id === modelId) || null;
+/* ========================================
+   УТИЛИТЫ
+   ======================================== */
+
+export function getModelMeta(id) {
+  return MODELS.find(m => m.id === id) || null;
 }
 
-/**
- * Создать MeshStandardMaterial из набора текстур и параметров,
- * если textures-поле задано в MODELS.
- */
 function createMaterialFromTextures(textures) {
   if (!textures) return null;
 
@@ -117,7 +91,6 @@ function createMaterialFromTextures(textures) {
   const texNormal = normal ? textureLoader.load(normal) : null;
   const texRough = rough ? textureLoader.load(rough) : null;
 
-  // Настройки точно такие же, как были в 8.html
   if (texBase) {
     texBase.flipY = false;
     texBase.colorSpace = THREE.SRGBColorSpace;
@@ -131,7 +104,7 @@ function createMaterialFromTextures(textures) {
     texRough.colorSpace = THREE.LinearSRGBColorSpace;
   }
 
-  const mat = new THREE.MeshStandardMaterial({
+  return new THREE.MeshStandardMaterial({
     map: texBase || null,
     normalMap: texNormal || null,
     roughnessMap: texRough || null,
@@ -139,132 +112,54 @@ function createMaterialFromTextures(textures) {
     roughness,
     envMapIntensity: envIntensity
   });
-
-  return mat;
 }
 
-/**
- * Центрирование и нормализация модели:
- * - центрируем по bounding box (чтобы pivot был в центре);
- * - масштабируем так, чтобы модель не была слишком маленькой/огромной.
- *
- * ВАЖНО:
- * - Здесь мы НЕ трогаем камеру и расстояние до модели;
- *   это будет делать threeViewer (с тем же алгоритмом, что и в 8.html).
- */
-function normalizeModel(root) {
-  const box = new THREE.Box3().setFromObject(root);
-  const size = box.getSize(new THREE.Vector3());
-  const maxSize = Math.max(size.x, size.y, size.z);
+/* ========================================
+   ЗАГРУЗКА МОДЕЛИ (идеально соответствует 8.html)
+   ======================================== */
 
-  if (maxSize > 0) {
-    const base = 2.0;
-    const scale = base / maxSize;
-    root.scale.setScalar(scale);
-  }
-   
-  });
-
-  const maxSize = Math.max(size.x, size.y, size.z);
-  if (maxSize > 0) {
-    const base = 2.0; // как в исходном коде
-    const scale = base / maxSize;
-    root.scale.setScalar(scale);
-  }
-}
-
-/* ===============================
-   ОСНОВНАЯ ФУНКЦИЯ ЗАГРУЗКИ МОДЕЛИ
-   =============================== */
-
-/**
- * Загрузить модель по её id.
- *
- * @param {string} modelId - id из MODELS
- * @param {object} options
- * @param {function(number|null):void} [options.onProgress] - колбэк прогресса (0–100 или null)
- * @param {function(string):void} [options.onStatus]       - колбэк текста статуса
- *
- * @returns {Promise<{ root: THREE.Group, meta: object }>}
- *          root — готовая THREE.Group, которую можно добавить в сцену.
- *          meta — объект MODELS для этой модели.
- */
-export function loadModel(modelId, options = {}) {
-  const { onProgress, onStatus } = options;
+export function loadModel(modelId, { onProgress, onStatus } = {}) {
   const meta = getModelMeta(modelId);
+  if (!meta) return Promise.reject("No model: " + modelId);
 
-  if (!meta) {
-    return Promise.reject(new Error("Не найдена модель с id=" + modelId));
-  }
+  if (onStatus) onStatus("Загрузка: " + meta.name);
 
-  if (onStatus) {
-    onStatus("Загрузка: " + meta.name);
-  }
-
-  // Если модель закэширована — просто клонируем и отдаём
-  if (cache[meta.id]) {
-    const clone = cache[meta.id].clone(true);
-    if (onStatus) {
-      onStatus("Модель из кэша: " + meta.name);
-    }
-    // здесь прогресс уже не важен, модель готова
-    if (onProgress) {
-      onProgress(100);
-    }
-    return Promise.resolve({ root: clone, meta });
-  }
+  // При повторе загружаем по URL снова (без clone)
+  const url = meta.url;
 
   return new Promise((resolve, reject) => {
     gltfLoader.load(
-      meta.url,
+      url,
       (gltf) => {
-        // Оборачиваем сцену в отдельный Group, как в исходном коде
-        const root = new THREE.Group();
-        root.add(gltf.scene);
+        const root = gltf.scene;  // ❗ используем напрямую
+        root.traverse(obj => {
+          obj.castShadow = false;
+          obj.receiveShadow = false;
+        });
 
-        // Если для модели заданы PBR-текстуры — применяем материал
-        const material = createMaterialFromTextures(meta.textures);
-        if (material) {
-          root.traverse((obj) => {
-            if (obj.isMesh) {
-              obj.material = material;
-              obj.castShadow = false;
-              obj.receiveShadow = false;
-            }
+        // PBR material
+        const mat = createMaterialFromTextures(meta.textures);
+        if (mat) {
+          root.traverse(obj => {
+            if (obj.isMesh) obj.material = mat;
           });
         }
 
-        // Нормализуем размер и центр
-        normalizeModel(root);
+        cache[meta.id] = url;
 
-        // Кэшируем уже нормализованный вариант (чтобы дальше только клонировать)
-        cache[meta.id] = root.clone(true);
-
-        if (onStatus) {
-          onStatus("Модель загружена: " + meta.name);
-        }
-        if (onProgress) {
-          onProgress(100);
-        }
+        if (onProgress) onProgress(100);
+        if (onStatus) onStatus("Модель загружена: " + meta.name);
 
         resolve({ root, meta });
       },
       (xhr) => {
-        if (!onProgress) return;
-
-        if (xhr.lengthComputable) {
-          const percent = (xhr.loaded / xhr.total) * 100;
-          onProgress(percent);
-        } else {
-          // длина не известна — просто даём null
-          onProgress(null);
+        if (xhr.lengthComputable && onProgress) {
+          onProgress((xhr.loaded / xhr.total) * 100);
         }
       },
       (err) => {
-        console.error("Ошибка загрузки модели:", err);
-        if (onStatus) {
-          onStatus("Ошибка загрузки модели");
-        }
+        console.error("Ошибка загрузки glTF:", err);
+        if (onStatus) onStatus("Ошибка загрузки");
         reject(err);
       }
     );
