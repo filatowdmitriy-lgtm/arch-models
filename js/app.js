@@ -54,6 +54,8 @@ const loadingTextEl  = document.getElementById("loadingText");
 const progressBarEl  = document.getElementById("progressBar");
 const statusEl       = document.getElementById("status");
 
+window.debugLog = document.getElementById("debugLog");
+
 /* =============================================================
    ИНИЦИАЛИЗАЦИЯ VIEWER (главный модуль)
    ============================================================= */
