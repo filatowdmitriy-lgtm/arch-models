@@ -1,40 +1,35 @@
 // generate-manifest.js
-// Полностью стабильная версия: без замены MODELS, без конфликтов имён.
+// Извлекает только MODELS = [ ... ] из файла models.js, не выполняя остальной код.
 
 import fs from "fs";
-import vm from "vm";
 
-// 1. Читаем models.js
+// 1. Читаем models.js как текст
 let text = fs.readFileSync("./js/models.js", "utf8");
 
-// 2. Удаляем import ... from ...
-text = text.replace(/import[\s\S]*?from\s+['"][^'"]+['"];/g, "");
+// 2. Удаляем переносы строк для удобства
+let oneLine = text.replace(/\n/g, " ");
 
-// 3. Удаляем ВСЕ export
-text = text.replace(/export\s+(const|let|var|function|class)\s+/g, "$1 ");
-text = text.replace(/export\s*\{[\s\S]*?\};?/g, "");
+// 3. Находим "MODELS = [ ... ]"
+const match = oneLine.match(/MODELS\s*=\s*\[(.*?)\];?/s);
 
-// 4. Создаём песочницу
-const sandbox = { console };
-vm.createContext(sandbox);
+if (!match) {
+  console.error("❌ Не удалось найти MODELS = [ ... ] в models.js");
+  process.exit(1);
+}
 
-// 5. Выполняем models.js
+// 4. Собираем текст массива
+const arrayText = "[" + match[1] + "]";
+
+// 5. Превращаем в настоящий объект JS
+let MODELS;
 try {
-  vm.runInContext(text, sandbox);
+  MODELS = eval(arrayText);
 } catch (err) {
-  console.error("❌ Ошибка выполнения models.js:", err);
+  console.error("❌ Ошибка парсинга MODELS:", err);
   process.exit(1);
 }
 
-// 6. Достаём MODELS из песочницы
-const MODELS = sandbox.MODELS;
-
-if (!MODELS) {
-  console.error("❌ MODELS не найден. Проверь models.js");
-  process.exit(1);
-}
-
-// 7. Формируем список файлов
+// 6. Формируем список файлов
 const files = [];
 
 for (const m of MODELS) {
@@ -59,7 +54,7 @@ const manifest = {
   files: unique
 };
 
-// 8. Записываем manifest.json
+// 7. Записываем
 fs.writeFileSync("./manifest.json", JSON.stringify(manifest, null, 2));
 
 console.log("✔ manifest.json успешно создан:", manifest.total, "файлов");
