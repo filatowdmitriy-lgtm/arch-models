@@ -1,5 +1,5 @@
 // js/threeViewer.js
-// Камера 1-в-1 как в 8.html — вращение, зум, инерция, поведение.
+// Камера полностью идентична поведению 8.html.
 
 import * as THREE from "three";
 
@@ -41,8 +41,9 @@ export function initThree(canvas) {
 
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true;
 
+  renderer.shadowMap.enabled = true;
+  
   setupLights();
   initControls(canvas);
 
@@ -72,10 +73,10 @@ export function setModel(root) {
 function fitCameraToModel(root) {
   const box = new THREE.Box3().setFromObject(root);
   const sphere = box.getBoundingSphere(new THREE.Sphere());
-  const radius = sphere.radius || 1.0;
+  const radius = sphere.radius || 1;
 
-  const fov = camera.fov * Math.PI / 180;
-  let dist = radius / Math.sin(fov / 2);
+  const fovRad = camera.fov * Math.PI / 180;
+  let dist = radius / Math.sin(fovRad / 2);
 
   const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
   if (isMobile) dist *= 1.55;
@@ -99,6 +100,7 @@ function updateCameraPosition() {
 export function resize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
+
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
@@ -119,34 +121,31 @@ function setupLights() {
   rim.position.set(-3.5, 5, -7.5);
   scene.add(rim);
 
-  const rimCold = new THREE.DirectionalLight(0xd8e4ff, 0.1);
-  rimCold.position.set(2.5, 3.5, -5);
-  scene.add(rimCold);
+  const coldRim = new THREE.DirectionalLight(0xd8e4ff, 0.1);
+  coldRim.position.set(2.5, 3.5, -5);
+  scene.add(coldRim);
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.04));
   scene.add(new THREE.HemisphereLight(0xffffff, 0x0a0a0a, 0.07));
 }
 
 function initControls(canvas) {
-  let isDragging = false;
+  let dragging = false;
   let lastX = 0, lastY = 0;
 
   let touchMode = null;
-  let lastPinchDist = 0;
+  let lastPinch = 0;
 
-  // MOUSE
   canvas.addEventListener("mousedown", (e) => {
-    isDragging = true;
+    dragging = true;
     lastX = e.clientX;
     lastY = e.clientY;
   });
 
-  window.addEventListener("mouseup", () => {
-    isDragging = false;
-  });
+  window.addEventListener("mouseup", () => dragging = false);
 
   window.addEventListener("mousemove", (e) => {
-    if (!isDragging) return;
+    if (!dragging) return;
 
     const dx = e.clientX - lastX;
     const dy = e.clientY - lastY;
@@ -163,7 +162,6 @@ function initControls(canvas) {
     );
   });
 
-  // WHEEL zoom (как в 8.html)
   canvas.addEventListener("wheel", (e) => {
     e.preventDefault();
 
@@ -176,7 +174,6 @@ function initControls(canvas) {
     );
   }, { passive: false });
 
-  // TOUCH
   canvas.addEventListener("touchstart", (e) => {
     e.preventDefault();
 
@@ -186,7 +183,7 @@ function initControls(canvas) {
       lastY = e.touches[0].clientY;
     } else if (e.touches.length === 2) {
       touchMode = "zoom";
-      lastPinchDist = pinch(e.touches[0], e.touches[1]);
+      lastPinch = pinch(e.touches[0], e.touches[1]);
     }
   }, { passive: false });
 
@@ -194,7 +191,7 @@ function initControls(canvas) {
     if (!touchMode) return;
     e.preventDefault();
 
-    if (touchMode === "rotate") {
+    if (touchMode === "rotate" && e.touches.length === 1) {
       const t = e.touches[0];
       const dx = t.clientX - lastX;
       const dy = t.clientY - lastY;
@@ -213,14 +210,14 @@ function initControls(canvas) {
 
     if (touchMode === "zoom" && e.touches.length === 2) {
       const dist = pinch(e.touches[0], e.touches[1]);
-      const delta = (lastPinchDist - dist) * 0.01;
+      const delta = (lastPinch - dist) * 0.01;
 
-      lastPinchDist = dist;
+      lastPinch = dist;
 
       state.radius = THREE.MathUtils.clamp(
         state.radius + delta,
         state.minRadius,
-        state.maxRadius
+               state.maxRadius
       );
     }
   }, { passive: false });
