@@ -2,25 +2,20 @@ name: Generate Manifest
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  update-manifest:
+  generate:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v3
 
-      - name: Setup Node
-        uses: actions/setup-node@v3
+      - uses: actions/setup-node@v3
         with:
           node-version: 20
 
@@ -32,5 +27,5 @@ jobs:
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add manifest.json
-          git commit -m "Auto-update manifest.json" || echo "No changes to commit"
+          git commit -m "Auto-update manifest.json" || echo "No changes"
           git push
