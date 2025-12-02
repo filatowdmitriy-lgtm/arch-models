@@ -1,20 +1,18 @@
-//
 // js/models.js
 //
-// Модуль отвечает за:
+// Отвечает за:
 // - список моделей MODELS (метаданные, пути к glTF, схемам, видео, текстурам);
 // - загрузку моделей из glTF (GLTFLoader);
 // - кэширование:
-//     • в памяти (быстрое переключение между моделями);
-//     • в IndexedDB (GLTF + BIN + PBR-текстуры для повторных запусков);
-// - создание PBR-материала из текстур.
-// Никакой логики three.js сцены, камеры и UI здесь нет.
-//
+//     • в памяти (modelCache) — мгновенное переключение между моделями;
+//     • в IndexedDB (cachedFetch) — GLTF, BIN и PBR-текстуры между заходами;
+// - создание PBR-материала из текстур;
+// - нормализацию модели по размеру и центру (pivot как в 8.html).
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-// Persistent-кэш (IndexedDB) — общий helper
+// persistent-кэш (IndexedDB)
 import { cachedFetch } from "./cache/cachedFetch.js";
 
 /* ============================================================
@@ -70,12 +68,12 @@ export const MODELS = [
   }
 ];
 
-/** Получить мету модели по id. */
+/** Найти мету модели по id. */
 export function getModelMeta(id) {
   return MODELS.find((m) => m.id === id) || null;
 }
 
-// Лоадер и кэш в памяти (для быстрого переключения)
+// Лоадер и кэш в памяти (для мгновенного переключения)
 const gltfLoader = new GLTFLoader();
 const modelCache = new Map();
 
@@ -128,11 +126,12 @@ async function createMaterialFromTextures(textures) {
    ГЛАВНАЯ ФУНКЦИЯ ЗАГРУЗКИ МОДЕЛИ
    ============================================================ */
 /**
- * Загружает модель по id.
- * - сначала проверяет кэш в памяти (modelCache);
- * - затем грузит glTF+BIN через IndexedDB-кэш;
- * - нормализует модель по размеру и центру;
- * - назначает PBR-материал.
+ * Загружает модель по id:
+ * - сначала проверяет кэш в памяти;
+ * - затем грузит glTF и BIN через IndexedDB-кэш;
+ * - создаёт rootGroup для нормализации;
+ * - назначает PBR-материал;
+ * - нормализует модель по размеру и центру.
  */
 export function loadModel(modelId, { onProgress, onStatus } = {}) {
   const meta = getModelMeta(modelId);
@@ -147,7 +146,7 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
 
   if (onStatus) onStatus("Загрузка: " + meta.name);
 
-  const url = meta.url;
+  const url    = meta.url;
   const binUrl = url.replace(".gltf", ".bin");
 
   return new Promise(async (resolve, reject) => {
@@ -168,18 +167,19 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
 
       const loader = new GLTFLoader(manager);
 
-      // 3) Логика максимально близка к твоей исходной (8.html)
+      // 3) Логика максимально близка к исходной (8.html)
       loader.load(
         gltfObjectURL,
 
+        // onLoad
         async (gltf) => {
           const scene = gltf.scene;
 
-          // Оборачиваем в rootGroup для нормализации
+          // Оборачиваем в rootGroup для нормализации и вращения
           const rootGroup = new THREE.Group();
           rootGroup.add(scene);
 
-          // PBR-материал (кэшируемые текстуры)
+          // Материал с текстурами из кэша
           const mat = await createMaterialFromTextures(meta.textures);
           if (mat) {
             scene.traverse((obj) => {
@@ -204,12 +204,14 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
           resolve({ root: rootGroup, meta });
         },
 
+        // onProgress
         (xhr) => {
           if (xhr.lengthComputable && onProgress) {
             onProgress((xhr.loaded / xhr.total) * 100);
           }
         },
 
+        // onError
         (err) => {
           console.error(err);
           if (onStatus) onStatus("Ошибка загрузки");
