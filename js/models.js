@@ -1,5 +1,5 @@
 // js/models.js
-// Финальная версия с нормализацией как в 8.html
+// Финальная версия — поведение 8.html, нормализация центра и масштаба.
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -106,7 +106,7 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
           });
         }
 
-        // ⭐ НОРМАЛИЗАЦИЯ - как в 8.html
+        // ⭐ нормализация как в оригинальном 8.html
         normalizeModel(root);
 
         if (onProgress) onProgress(100);
@@ -130,7 +130,7 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
   });
 }
 
-// ⭐ Нормализация модели (центр + масштаб)
+// ⭐ ТА САМАЯ НОРМАЛИЗАЦИЯ МОДЕЛИ ИЗ 8.HTML
 function normalizeModel(root) {
   const box = new THREE.Box3().setFromObject(root);
   const center = box.getCenter(new THREE.Vector3());
