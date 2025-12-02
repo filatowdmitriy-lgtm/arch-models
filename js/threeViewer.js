@@ -1,22 +1,13 @@
 // js/threeViewer.js
 //
-// Модуль 3D-вьюера на three.js
-// Отвечает ТОЛЬКО за 3D:
-// - создание сцены, камеры, света;
-// - управление мышью и тачем (вращение + zoom);
-// - плавная анимация камеры;
-// - подгонка камеры под размер модели;
-// - resize окна.
+// Финальная версия, совместимая с исходным 8.html,
+// но улучшенная: правильный пивот модели, корректное центрирование,
+// и никакие трансформации модели НЕ нарушаются.
 //
-// Никакого UI, схем, видео, галереи и вкладок здесь нет.
-// Вся логика идентична оригинальному 8.html.
+// Камера крутится вокруг state.center,
+// который вычисляется из bounding sphere реальной модели.
 //
-// Использование:
-//   import { initThree, setModel, resize } from "./threeViewer.js";
-//
-//   initThree(canvas);
-//   setModel(rootGroup);
-//   window.addEventListener("resize", resize);
+// НИКАКИХ манипуляций с моделью (scale/offset) — как в твоём оригинале.
 //
 
 import * as THREE from "three";
@@ -26,16 +17,20 @@ let camera = null;
 let renderer = null;
 
 /* ==============================
-   СОСТОЯНИЕ КАМЕРЫ (из 8.html)
+   СОСТОЯНИЕ КАМЕРЫ
    ============================== */
+
 const state = {
   radius: 4.5,
   minRadius: 2.0,
   maxRadius: 12.0,
+
   rotX: 0.10,
   rotY: 0.00,
   targetRotX: 0.10,
-  targetRotY: 0.00
+  targetRotY: 0.00,
+
+  center: new THREE.Vector3(0, 0, 0) // центр модели
 };
 
 let currentModel = null;
@@ -69,7 +64,7 @@ export function initThree(canvas) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.BasicShadowMap;
 
-  // === ОСВЕЩЕНИЕ (полный перенос из 8.html) ===
+  // === ОСВЕЩЕНИЕ (1:1 как в 8.html) ===
   const zenith = new THREE.DirectionalLight(0xf5f8ff, 0.0);
   zenith.position.set(0, 11, 2);
   scene.add(zenith);
@@ -97,10 +92,10 @@ export function initThree(canvas) {
   const hemi = new THREE.HemisphereLight(0xffffff, 0x0a0a0a, 0.07);
   scene.add(hemi);
 
-  // === GESTURES ===
+  // === GESTURES (1:1 копия поведение из 8.html) ===
   initControls(canvas);
 
-  // === ФРЕЙМ-АНИМАЦИЯ (как в 8.html) ===
+  // === ФРЕЙМ-АНИМАЦИЯ ===
   renderer.setAnimationLoop(() => {
     state.rotX += (state.targetRotX - state.rotX) * 0.22;
     state.rotY += (state.targetRotY - state.rotY) * 0.22;
@@ -124,11 +119,10 @@ export function setModel(root) {
   currentModel = root;
   scene.add(currentModel);
 
-  // Сброс вращения (как в 8.html)
+  // Сброс вращения
   state.targetRotX = 0.10;
   state.targetRotY = 0.00;
 
-  // Пересчёт дистанции камеры — алгоритм 1:1
   fitCameraToModel(root);
 }
 
@@ -137,18 +131,20 @@ export function setModel(root) {
    ============================== */
 
 function fitCameraToModel(root) {
-  // bounding sphere после масштабирования из models.js
   const box = new THREE.Box3().setFromObject(root);
   const sphere = box.getBoundingSphere(new THREE.Sphere());
-  const baseRadius = sphere.radius || 2.0;
 
+  // Сохраняем центр модели
+  state.center.copy(sphere.center);
+
+  // Радиус камеры
   const fovRad = camera.fov * Math.PI / 180;
-  let dist = baseRadius / Math.sin(fovRad / 2);
+  let dist = sphere.radius / Math.sin(fovRad / 2);
 
-  // Мобильный фактор — как в 8.html
+  // Мобильный множитель (как в 8.html)
   const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const distanceFactor = isMobile ? 1.55 : 1;
-  dist *= distanceFactor;
+  const factor = isMobile ? 1.55 : 1;
+  dist *= factor;
 
   state.radius = dist;
   state.minRadius = dist * 0.4;
@@ -165,8 +161,14 @@ function updateCameraPosition() {
   const z = r * Math.cos(state.rotY) * Math.cos(state.rotX);
   const y = r * Math.sin(state.rotX);
 
-  camera.position.set(x, y, z);
-  camera.lookAt(0, 0, 0);
+  // Камера ставится относительно центра модели
+  camera.position.set(
+    state.center.x + x,
+    state.center.y + y,
+    state.center.z + z
+  );
+
+  camera.lookAt(state.center);
 }
 
 /* ==============================
@@ -178,20 +180,22 @@ export function resize() {
 
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
+
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
 /* ==============================
-   GESTURES (копия 8.html)
+   GESTURES (орбита / зум)
    ============================== */
 
 function initControls(canvas) {
   let isDragging = false;
-  let lastX = 0, lastY = 0;
+  let lastX = 0,
+    lastY = 0;
   let touchMode = null;
   let lastPinchDist = 0;
 
-  // === MOUSE ===
+  /* ---- MOUSE ---- */
   canvas.addEventListener("mousedown", (e) => {
     isDragging = true;
     lastX = e.clientX;
@@ -214,77 +218,91 @@ function initControls(canvas) {
     state.targetRotY += dx * -0.005;
     state.targetRotX += dy * 0.005;
 
-    // Ограничения как в 8.html
     state.targetRotX = Math.max(
       -Math.PI / 2 + 0.2,
       Math.min(Math.PI / 2 - 0.2, state.targetRotX)
     );
   });
 
-  canvas.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    const delta = e.deltaY * 0.002;
+  canvas.addEventListener(
+    "wheel",
+    (e) => {
+      e.preventDefault();
 
-    state.radius = THREE.MathUtils.clamp(
-      state.radius + delta,
-      state.minRadius,
-      state.maxRadius
-    );
-  }, { passive: false });
-
-  // === TOUCH ===
-  canvas.addEventListener("touchstart", (e) => {
-    e.preventDefault();
-    if (e.touches.length === 1) {
-      touchMode = "rotate";
-      lastX = e.touches[0].clientX;
-      lastY = e.touches[0].clientY;
-    } else if (e.touches.length === 2) {
-      touchMode = "zoom";
-      lastPinchDist = pinchDistance(e.touches[0], e.touches[1]);
-    }
-  }, { passive: false });
-
-  canvas.addEventListener("touchmove", (e) => {
-    if (!touchMode) return;
-    e.preventDefault();
-
-    if (touchMode === "rotate" && e.touches.length === 1) {
-      const t = e.touches[0];
-      const dx = t.clientX - lastX;
-      const dy = t.clientY - lastY;
-
-      lastX = t.clientX;
-      lastY = t.clientY;
-
-      state.targetRotY += dx * -0.008;
-      state.targetRotX += dy * 0.008;
-
-      state.targetRotX = Math.max(
-        -Math.PI / 2 + 0.2,
-        Math.min(Math.PI / 2 - 0.2, state.targetRotX)
-      );
-    } else if (touchMode === "zoom" && e.touches.length === 2) {
-      const dist = pinchDistance(e.touches[0], e.touches[1]);
-      const delta = (lastPinchDist - dist) * 0.01;
-
-      lastPinchDist = dist;
+      const delta = e.deltaY * 0.002;
 
       state.radius = THREE.MathUtils.clamp(
         state.radius + delta,
         state.minRadius,
         state.maxRadius
       );
-    }
-  }, { passive: false });
+    },
+    { passive: false }
+  );
+
+  /* ---- TOUCH ---- */
+  canvas.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault();
+
+      if (e.touches.length === 1) {
+        touchMode = "rotate";
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
+      } else if (e.touches.length === 2) {
+        touchMode = "zoom";
+        lastPinchDist = pinch(e.touches[0], e.touches[1]);
+      }
+    },
+    { passive: false }
+  );
+
+  canvas.addEventListener(
+    "touchmove",
+    (e) => {
+      if (!touchMode) return;
+      e.preventDefault();
+
+      if (touchMode === "rotate" && e.touches.length === 1) {
+        const t = e.touches[0];
+
+        const dx = t.clientX - lastX;
+        const dy = t.clientY - lastY;
+
+        lastX = t.clientX;
+        lastY = t.clientY;
+
+        state.targetRotY += dx * -0.008;
+        state.targetRotX += dy * 0.008;
+
+        state.targetRotX = Math.max(
+          -Math.PI / 2 + 0.2,
+          Math.min(Math.PI / 2 - 0.2, state.targetRotX)
+        );
+      } else if (touchMode === "zoom" && e.touches.length === 2) {
+        const dist = pinch(e.touches[0], e.touches[1]);
+        const delta = (lastPinchDist - dist) * 0.01;
+
+        lastPinchDist = dist;
+
+        state.radius = THREE.MathUtils.clamp(
+          state.radius + delta,
+          state.minRadius,
+          state.maxRadius
+        );
+      }
+    },
+    { passive: false }
+  );
 
   window.addEventListener("touchend", () => {
     touchMode = null;
   });
 
-  function pinchDistance(t1, t2) {
-    const dx = t1.clientX - t2.clientX;
-    const dy = t1.clientY - t2.clientY;
+  function pinch(a, b) {
+    const dx = a.clientX - b.clientX;
+    const dy = a.clientY - b.clientY;
     return Math.sqrt(dx * dx + dy * dy);
   }
 }
