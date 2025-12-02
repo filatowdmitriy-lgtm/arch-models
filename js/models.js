@@ -1,8 +1,5 @@
 // js/models.js
-//
-// Рабочая простая версия, где ВСЁ работало, модель не разваливалась,
-// не ломались трансформы, не нарушались pivots.
-//
+// Финальная версия с нормализацией как в 8.html
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -52,13 +49,20 @@ const gltfLoader = new GLTFLoader();
 const textureLoader = new THREE.TextureLoader();
 
 export function getModelMeta(id) {
-  return MODELS.find((m) => m.id === id) || null;
+  return MODELS.find(m => m.id === id) || null;
 }
 
 function createMaterialFromTextures(textures) {
   if (!textures) return null;
 
-  const { base, normal, rough, metalness = 0.0, roughness = 1.0, envIntensity = 0.7 } = textures;
+  const {
+    base,
+    normal,
+    rough,
+    metalness = 0.0,
+    roughness = 1.0,
+    envIntensity = 0.7
+  } = textures;
 
   const texBase   = base   ? textureLoader.load(base)   : null;
   const texNormal = normal ? textureLoader.load(normal) : null;
@@ -69,9 +73,9 @@ function createMaterialFromTextures(textures) {
   if (texRough)  { texRough.flipY = false; texRough.colorSpace = THREE.LinearSRGBColorSpace; }
 
   return new THREE.MeshStandardMaterial({
-    map: texBase || null,
-    normalMap: texNormal || null,
-    roughnessMap: texRough || null,
+    map: texBase,
+    normalMap: texNormal,
+    roughnessMap: texRough,
     metalness,
     roughness,
     envMapIntensity: envIntensity
@@ -91,28 +95,32 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
         const root = gltf.scene;
 
         const mat = createMaterialFromTextures(meta.textures);
-
         if (mat) {
-          root.traverse((o) => {
-            if (o.isMesh) {
-              o.material = mat;
-              o.castShadow = false;
-              o.receiveShadow = false;
-              o.frustumCulled = false;
+          root.traverse(obj => {
+            if (obj.isMesh) {
+              obj.material = mat;
+              obj.castShadow = false;
+              obj.receiveShadow = false;
+              obj.frustumCulled = false;
             }
           });
         }
 
+        // ⭐ НОРМАЛИЗАЦИЯ - как в 8.html
+        normalizeModel(root);
+
         if (onProgress) onProgress(100);
-        if (onStatus) onStatus("Модель загружена: " + meta.name);
+        if (onStatus) onStatus("Готово");
 
         resolve({ root, meta });
       },
+
       (xhr) => {
         if (xhr.lengthComputable && onProgress) {
           onProgress((xhr.loaded / xhr.total) * 100);
         }
       },
+
       (err) => {
         console.error(err);
         if (onStatus) onStatus("Ошибка загрузки");
@@ -120,4 +128,17 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
       }
     );
   });
+}
+
+// ⭐ Нормализация модели (центр + масштаб)
+function normalizeModel(root) {
+  const box = new THREE.Box3().setFromObject(root);
+  const center = box.getCenter(new THREE.Vector3());
+  root.position.sub(center);
+
+  const size = box.getSize(new THREE.Vector3());
+  const maxSize = Math.max(size.x, size.y, size.z) || 1;
+
+  const scale = 2.0 / maxSize;
+  root.scale.setScalar(scale);
 }
