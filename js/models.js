@@ -1,14 +1,30 @@
-// js/models.js
-// МГНОВЕННАЯ ЗАГРУЗКА МОДЕЛЕЙ — как в оригинальном 8.html.
-// ✓ Однократная загрузка
-// ✓ Однократная нормализация
-// ✓ Однократное назначение материалов
-// ✓ Кэш готовых моделей (rootGroup)
-// ✓ Моментальное переключение (<1 мс)
+//
+// models.js — версия с IndexedDB-кэшем GLTF/BIN,
+// при этом поведение 8.html полностью сохранено:
+//
+// ✓ твои материалы
+// ✓ твой rootGroup
+// ✓ твоя normalizeModel()
+// ✓ твой modelCache
+// ✓ мгновенное переключение
+// ✓ правильный pivot
+// ✓ никакого parse(text)
+// ✓ GLTFLoader.load() работает как раньше
+//
+// Отличие только одно:
+// вместо URL в сеть, loader.load получает blob-URL из IndexedDB.
+//
 
+
+// ============= ИМПОРТЫ =============
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
+// IndexedDB кэш
+import { cachedFetch } from "./cache/cachedFetch.js";
+
+
+// ============= СПИСОК МОДЕЛЕЙ =============
 export const MODELS = [
   {
     id: "doric",
@@ -19,11 +35,15 @@ export const MODELS = [
     schemes: [
       "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/scheme1.jpg"
     ],
-    video: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/test_video.mp4",
+    video:
+      "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/test_video.mp4",
     textures: {
-      base:   "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/BaseColor.jpg",
-      normal: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Normal.jpg",
-      rough:  "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg",
+      base:
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/BaseColor.jpg",
+      normal:
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Normal.jpg",
+      rough:
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg",
       metalness: 0.0,
       roughness: 1.0,
       envIntensity: 0.7
@@ -33,16 +53,20 @@ export const MODELS = [
     id: "ionic",
     name: "Ионическая капитель",
     desc: "Классический греческий ордер, витые волюты.",
-    url:  "https://filatowdmitriy-lgtm.github.io/arch-models/models/ionic.gltf",
+    url: "https://filatowdmitriy-lgtm.github.io/arch-models/models/ionic.gltf",
     thumbLetter: "I",
     schemes: [
       "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/scheme1.jpg"
     ],
-    video: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/test_video.mp4",
+    video:
+      "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/test_video.mp4",
     textures: {
-      base:   "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/BaseColor.jpg",
-      normal: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Normal.jpg",
-      rough:  "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg",
+      base:
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/BaseColor.jpg",
+      normal:
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Normal.jpg",
+      rough:
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg",
       metalness: 0.0,
       roughness: 1.0,
       envIntensity: 0.75
@@ -50,16 +74,17 @@ export const MODELS = [
   }
 ];
 
+
+// ============= КЭШ МАТЕРИАЛОВ И МОДЕЛЕЙ =============
 const gltfLoader = new GLTFLoader();
 const textureLoader = new THREE.TextureLoader();
-
-// Кэш полностью готовых моделей (rootGroup)
 const modelCache = new Map();
 
 export function getModelMeta(id) {
-  return MODELS.find(m => m.id === id) || null;
+  return MODELS.find((m) => m.id === id) || null;
 }
 
+// ============= МАТЕРИАЛЫ (без изменений) =============
 function createMaterialFromTextures(textures) {
   if (!textures) return null;
 
@@ -81,11 +106,15 @@ function createMaterialFromTextures(textures) {
   });
 }
 
+
+// =====================================================
+//                ГЛАВНАЯ ФУНКЦИЯ ЗАГРУЗКИ
+// =====================================================
 export function loadModel(modelId, { onProgress, onStatus } = {}) {
   const meta = getModelMeta(modelId);
   if (!meta) return Promise.reject("No model: " + modelId);
 
-  // ⭐ Если модель уже в кэше — отдаём мгновенно
+  // ⭐ Мгновенный кэш (твоя логика)
   if (modelCache.has(modelId)) {
     if (onStatus) onStatus("Готово (кэш)");
     if (onProgress) onProgress(100);
@@ -94,59 +123,95 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
 
   if (onStatus) onStatus("Загрузка: " + meta.name);
 
-  return new Promise((resolve, reject) => {
-    gltfLoader.load(
+  const url = meta.url;
+  const binUrl = url.replace(".gltf", ".bin");
 
-      meta.url,
+  return new Promise(async (resolve, reject) => {
+    try {
+      //
+      // 1) ——— СКАЧИВАЕМ glTF И BIN ЧЕРЕЗ PERSISTENT КЭШ ————
+      //
+      const gltfBlob = await cachedFetch(url);
+      const binBlob  = await cachedFetch(binUrl);
 
-      (gltf) => {
-        const scene = gltf.scene;
+      const gltfObjectURL = URL.createObjectURL(gltfBlob);
+      const binObjectURL  = URL.createObjectURL(binBlob);
 
-        // Создаём rootGroup (как в 8.html)
-        const rootGroup = new THREE.Group();
-        rootGroup.add(scene);
+      //
+      // 2) ——— Подменяем BIN для GLTFLoader ———
+      //
+      const manager = new THREE.LoadingManager();
+      manager.setURLModifier((u) => {
+        if (u.endsWith(".bin")) return binObjectURL;
+        return u;
+      });
 
-        // PBR материалы
-        const mat = createMaterialFromTextures(meta.textures);
-        if (mat) {
-          scene.traverse(obj => {
-            if (obj.isMesh) {
-              obj.material = mat;
-              obj.castShadow = false;
-              obj.receiveShadow = false;
-              obj.frustumCulled = false;
-            }
-          });
+      const loader = new GLTFLoader(manager);
+
+      //
+      // 3) ——— ТВОЙ ИСХОДНЫЙ КОД gltfLoader.load(), НО С BLOB-URL ————
+      //
+      loader.load(
+        gltfObjectURL,
+
+        (gltf) => {
+          const scene = gltf.scene;
+
+          // Твой rootGroup
+          const rootGroup = new THREE.Group();
+          rootGroup.add(scene);
+
+          // Твои материалы
+          const mat = createMaterialFromTextures(meta.textures);
+          if (mat) {
+            scene.traverse((obj) => {
+              if (obj.isMesh) {
+                obj.material = mat;
+                obj.castShadow = false;
+                obj.receiveShadow = false;
+                obj.frustumCulled = false;
+              }
+            });
+          }
+
+          // Твоя нормализация pivot/масштаба
+          normalizeModel(rootGroup, scene);
+
+          // Твой кэш моделей
+          modelCache.set(modelId, rootGroup);
+
+          if (onProgress) onProgress(100);
+          if (onStatus) onStatus("Готово");
+
+          resolve({ root: rootGroup, meta });
+        },
+
+        // Твой прогресс
+        (xhr) => {
+          if (xhr.lengthComputable && onProgress) {
+            onProgress((xhr.loaded / xhr.total) * 100);
+          }
+        },
+
+        // Твоя ошибка
+        (err) => {
+          console.error(err);
+          if (onStatus) onStatus("Ошибка загрузки");
+          reject(err);
         }
-
-        // ⭐ нормализация pivot + масштаба (как в 8.html)
-        normalizeModel(rootGroup, scene);
-
-        // ⭐ сохраняем ГОТОВУЮ модель в кэш
-        modelCache.set(modelId, rootGroup);
-
-        if (onProgress) onProgress(100);
-        if (onStatus) onStatus("Готово");
-
-        resolve({ root: rootGroup, meta });
-      },
-
-      (xhr) => {
-        if (xhr.lengthComputable && onProgress) {
-          onProgress((xhr.loaded / xhr.total) * 100);
-        }
-      },
-
-      (err) => {
-        console.error(err);
-        if (onStatus) onStatus("Ошибка загрузки");
-        reject(err);
-      }
-    );
+      );
+    } catch (err) {
+      console.error("cachedFetch error:", err);
+      if (onStatus) onStatus("Ошибка загрузки");
+      reject(err);
+    }
   });
 }
 
-// ⭐ нормализация ровно как в 8.html
+
+// =====================================================
+//       НОРМАЛИЗАЦИЯ (твоя, без изменений!)
+// =====================================================
 function normalizeModel(rootGroup, gltfScene) {
   const box = new THREE.Box3().setFromObject(rootGroup);
 
