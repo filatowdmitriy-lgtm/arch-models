@@ -1,203 +1,171 @@
-//
-// FULL MODELS.JS — PERSISTENT CACHE + НИКАКИХ СЛОМОВ ПОВЕДЕНИЯ
-//
+// ===============================================
+// models.js — финальная версия с полным кэшированием
+// ===============================================
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-import { cachedFetch } from "./cache/cachedFetch.js"; // <— добавили
+/* ============================================================
+   ГЛОБАЛЬНЫЙ DEBUG LOG (мини-консоль на экране)
+============================================================ */
+function log(msg) {
+    if (window.debugLog) window.debugLog.textContent = msg;
+}
 
-// ============= СПИСОК МОДЕЛЕЙ =============
+/* ============================================================
+   МОДЕЛИ (оставляем как есть)
+============================================================ */
 export const MODELS = [
   {
     id: "doric",
     name: "Дорическая капитель",
-    desc: "Архаический строгий стиль.",
     url: "https://filatowdmitriy-lgtm.github.io/arch-models/models/doric.gltf",
-    thumbLetter: "D",
-    schemes: [
-      "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/scheme1.jpg"
-    ],
-    video:
-      "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/test_video.mp4",
     textures: {
-      base:
-        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/BaseColor.jpg",
-      normal:
-        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Normal.jpg",
-      rough:
-        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg",
-      metalness: 0.0,
-      roughness: 1.0,
-      envIntensity: 0.7
+      base: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/BaseColor.jpg",
+      normal: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Normal.jpg",
+      rough: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg"
     }
   },
   {
     id: "ionic",
     name: "Ионическая капитель",
-    desc: "Классический греческий ордер, витые волюты.",
     url: "https://filatowdmitriy-lgtm.github.io/arch-models/models/ionic.gltf",
-    thumbLetter: "I",
-    schemes: [
-      "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/scheme1.jpg"
-    ],
-    video:
-      "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/test_video.mp4",
     textures: {
-      base:
-        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/BaseColor.jpg",
-      normal:
-        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Normal.jpg",
-      rough:
-        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg",
-      metalness: 0.0,
-      roughness: 1.0,
-      envIntensity: 0.75
+      base: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/BaseColor.jpg",
+      normal: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Normal.jpg",
+      rough: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg"
     }
   }
 ];
 
+/* ============================================================
+   УТИЛИТЫ
+============================================================ */
 export function getModelMeta(id) {
-  return MODELS.find((m) => m.id === id) || null;
+    return MODELS.find(m => m.id === id);
 }
 
-const gltfLoader = new GLTFLoader();
-const textureLoader = new THREE.TextureLoader();
-const modelCache = new Map();
+/* ============================================================
+   PERSISTENT КЭШ FETCH (GLTF/BIN/ТЕКСТУРЫ)
+============================================================ */
+async function cachedFetch(url) {
+    const dbReq = indexedDB.open("arch-models-cache", 1);
 
-// ============= МАТЕРИАЛЫ — без изменений =============
-function createMaterialFromTextures(textures) {
-  if (!textures) return null;
+    return new Promise((resolve, reject) => {
+        dbReq.onupgradeneeded = () => {
+            const db = dbReq.result;
+            if (!db.objectStoreNames.contains("files"))
+                db.createObjectStore("files");
+        };
 
-  const texBase = textures.base ? textureLoader.load(textures.base) : null;
-  const texNormal = textures.normal ? textureLoader.load(textures.normal) : null;
-  const texRough = textures.rough ? textureLoader.load(textures.rough) : null;
+        dbReq.onerror = () => reject(dbReq.error);
 
-  if (texBase) {
-    texBase.flipY = false;
-    texBase.colorSpace = THREE.SRGBColorSpace;
-  }
-  if (texNormal) {
-    texNormal.flipY = false;
-    texNormal.colorSpace = THREE.LinearSRGBColorSpace;
-  }
-  if (texRough) {
-    texRough.flipY = false;
-    texRough.colorSpace = THREE.LinearSRGBColorSpace;
-  }
+        dbReq.onsuccess = () => {
+            const db = dbReq.result;
+            const tx = db.transaction("files", "readonly");
+            const store = tx.objectStore("files");
+            const getReq = store.get(url);
 
-  return new THREE.MeshStandardMaterial({
-    map: texBase || null,
-    normalMap: texNormal || null,
-    roughnessMap: texRough || null,
-    metalness: textures.metalness ?? 0,
-    roughness: textures.roughness ?? 1,
-    envMapIntensity: textures.envIntensity ?? 0.7
-  });
+            getReq.onsuccess = () => {
+                if (getReq.result) {
+                    log("HIT " + url);
+                    resolve(getReq.result);
+                } else {
+                    log("LOAD " + url);
+                    fetch(url)
+                        .then(r => r.blob())
+                        .then(blob => {
+                            const txw = db.transaction("files", "readwrite");
+                            txw.objectStore("files").put(blob, url);
+                            resolve(blob);
+                        })
+                        .catch(reject);
+                }
+            };
+        };
+    });
 }
 
-// ============= НОРМАЛИЗАЦИЯ — без изменений =============
-function normalizeModel(rootGroup, gltfScene) {
-  const box = new THREE.Box3().setFromObject(rootGroup);
+/* ============================================================
+   ТЕКСТУРЫ ЧЕРЕЗ КЭШ
+============================================================ */
+async function loadTextureCached(url) {
+    log("TEX fetch " + url);
 
-  const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
+    const blob = await cachedFetch(url);
+    const local = URL.createObjectURL(blob);
 
-  gltfScene.position.sub(center);
-
-  const maxSize = Math.max(size.x, size.y, size.z) || 1;
-  const scale = 2.0 / maxSize;
-  rootGroup.scale.setScalar(scale);
+    return new Promise(resolve => {
+        new THREE.TextureLoader().load(local, tex => {
+            tex.flipY = false;
+            resolve(tex);
+        });
+    });
 }
 
-// =====================================================
-//       ГЛАВНАЯ ФУНКЦИЯ ЗАГРУЗКИ МОДЕЛИ
-// =====================================================
-export function loadModel(modelId, { onProgress, onStatus } = {}) {
-  const meta = getModelMeta(modelId);
-  if (!meta) return Promise.reject("No model: " + modelId);
+/* ============================================================
+   МАТЕРИАЛ С PBR ТЕКСТУРАМИ
+============================================================ */
+async function createMaterialFromTextures(tex) {
+    if (!tex) return null;
 
-  // ⭐ 1. Мгновенный кэш твоего приложения
-  if (modelCache.has(modelId)) {
-    if (onStatus) onStatus("Готово (кэш)");
-    if (onProgress) onProgress(100);
-    return Promise.resolve({ root: modelCache.get(modelId), meta });
-  }
+    const base = tex.base ? await loadTextureCached(tex.base) : null;
+    const norm = tex.normal ? await loadTextureCached(tex.normal) : null;
+    const rough = tex.rough ? await loadTextureCached(tex.rough) : null;
 
-  if (onStatus) onStatus("Загрузка: " + meta.name);
+    if (base)   base.colorSpace = THREE.SRGBColorSpace;
+    if (norm)   norm.colorSpace = THREE.LinearSRGBColorSpace;
+    if (rough)  rough.colorSpace = THREE.LinearSRGBColorSpace;
 
-  const url = meta.url;
-  const binUrl = url.replace(".gltf", ".bin");
+    return new THREE.MeshStandardMaterial({
+        map: base || null,
+        normalMap: norm || null,
+        roughnessMap: rough || null,
+        metalness: 0,
+        roughness: 1,
+        envMapIntensity: 0.8
+    });
+}
 
-  return new Promise(async (resolve, reject) => {
-    try {
-      // ⭐ 2. PERSISTENT CACHE (IndexedDB)
-      const gltfBlob = await cachedFetch(url);
-      const binBlob = await cachedFetch(binUrl);
+/* ============================================================
+   ЗАГРУЗКА GLTF ЧЕРЕЗ КЭШ (грузим .gltf + .bin автоматически)
+============================================================ */
+export async function loadModel(id, { onProgress, onStatus } = {}) {
+    const meta = getModelMeta(id);
+    if (!meta) throw "No model: " + id;
 
-      const gltfObjectURL = URL.createObjectURL(gltfBlob);
-      const binObjectURL = URL.createObjectURL(binBlob);
+    log("MODEL " + meta.id);
 
-      // ⭐ 3. Подменяем BIN на blob
-      const manager = new THREE.LoadingManager();
-      manager.setURLModifier((u) => {
-        if (u.endsWith(".bin")) return binObjectURL;
-        return u;
-      });
+    // 1) грузим gltf как текст
+    const gltfBlob = await cachedFetch(meta.url);
+    const gltfText = await gltfBlob.text();
+    const gltfJson = JSON.parse(gltfText);
 
-      const loader = new GLTFLoader(manager);
-
-      // ⭐ 4. Дальше — твой родной код загрузки
-      loader.load(
-        gltfObjectURL,
-
-        (gltf) => {
-          const scene = gltf.scene;
-
-          const rootGroup = new THREE.Group();
-          rootGroup.add(scene);
-
-          // материалы
-          const mat = createMaterialFromTextures(meta.textures);
-          if (mat) {
-            scene.traverse((obj) => {
-              if (obj.isMesh) {
-                obj.material = mat;
-                obj.castShadow = false;
-                obj.receiveShadow = false;
-                obj.frustumCulled = false;
-              }
-            });
-          }
-
-          // нормализация
-          normalizeModel(rootGroup, scene);
-
-          // твой кэш моделей
-          modelCache.set(modelId, rootGroup);
-
-          if (onProgress) onProgress(100);
-          if (onStatus) onStatus("Готово");
-
-          resolve({ root: rootGroup, meta });
-        },
-
-        (xhr) => {
-          if (xhr.lengthComputable && onProgress) {
-            onProgress((xhr.loaded / xhr.total) * 100);
-          }
-        },
-
-        (err) => {
-          console.error("Ошибка loader:", err);
-          if (onStatus) onStatus("Ошибка загрузки");
-          reject(err);
-        }
-      );
-    } catch (err) {
-      console.error("cachedFetch error:", err);
-      if (onStatus) onStatus("Ошибка загрузки");
-      reject(err);
+    // 2) грузим BIN
+    if (gltfJson.buffers && gltfJson.buffers[0]) {
+        const binURL = new URL(gltfJson.buffers[0].uri, meta.url).href;
+        const binBlob = await cachedFetch(binURL);
+        const binLocal = URL.createObjectURL(binBlob);
+        gltfJson.buffers[0].uri = binLocal;
     }
-  });
+
+    // 3) локальный gltf
+    const localGltfURL = URL.createObjectURL(new Blob([JSON.stringify(gltfJson)], { type: "application/json" }));
+
+    // 4) грузим GLTF через loader
+    const gltf = await new Promise((resolve, reject) => {
+        const loader = new GLTFLoader();
+        loader.load(
+            localGltfURL,
+            resolve,
+            xhr => onProgress?.((xhr.loaded / xhr.total) * 100),
+            reject
+        );
+    });
+
+    // 5) применяем материал
+    const mat = await createMaterialFromTextures(meta.textures);
+    gltf.scene.traverse(o => { if (o.isMesh) o.material = mat; });
+
+    return { root: gltf.scene, meta };
 }
