@@ -1,5 +1,5 @@
 // js/threeViewer.js
-// Камера полностью идентична поведению 8.html.
+// Камера и управление — 100% поведение 8.html.
 
 import * as THREE from "three";
 
@@ -41,9 +41,8 @@ export function initThree(canvas) {
 
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
   renderer.shadowMap.enabled = true;
-  
+
   setupLights();
   initControls(canvas);
 
