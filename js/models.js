@@ -162,13 +162,7 @@ function normalizeModel(root) {
     const scale = base / maxSize;
     root.scale.setScalar(scale);
   }
-
-
-  // Сдвигаем сцену так, чтобы центр оказался в (0, 0, 0)
-  root.traverse(obj => {
-    if (obj.isObject3D) {
-      obj.position.sub(center);
-    }
+   
   });
 
   const maxSize = Math.max(size.x, size.y, size.z);
