@@ -1,8 +1,8 @@
 // js/threeViewer.js
 //
-// Стабильная рабочая версия до всех фиксов центра.
-// Модель отображается корректно, ничего не ломается.
-// Единственный минус: pivot смещён, но мы потом исправим.
+// Рабочая стабильная версия + FIX pivot центра модели.
+// Модели не трогаем (никакого normalize, scale, position = 0).
+// Камера всегда вращается вокруг реального центра геометрии модели.
 //
 
 import * as THREE from "three";
@@ -22,18 +22,19 @@ const state = {
   rotY: 0.00,
   targetRotX: 0.10,
   targetRotY: 0.00,
+
+  // ⭐ Центр модели — добавлено для идеального pivot
+  center: new THREE.Vector3(0, 0, 0),
 };
 
 /* ============================================================
-   initThree
+   initThree()
    ============================================================ */
 
 export function initThree(canvas) {
-  // сцена
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x050506);
 
-  // камера
   camera = new THREE.PerspectiveCamera(
     40,
     window.innerWidth / window.innerHeight,
@@ -43,7 +44,6 @@ export function initThree(canvas) {
 
   updateCameraPosition();
 
-  // рендер
   renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: true,
@@ -57,10 +57,10 @@ export function initThree(canvas) {
   renderer.shadowMap.type = THREE.BasicShadowMap;
 
   setupLights();
-
   initControls(canvas);
 
   renderer.setAnimationLoop(() => {
+    // плавная анимация углов вращения
     state.rotX += (state.targetRotX - state.rotX) * 0.22;
     state.rotY += (state.targetRotY - state.rotY) * 0.22;
 
@@ -70,7 +70,7 @@ export function initThree(canvas) {
 }
 
 /* ============================================================
-   setModel
+   setModel(root)
    ============================================================ */
 
 export function setModel(root) {
@@ -81,26 +81,33 @@ export function setModel(root) {
   currentModel = root;
   scene.add(currentModel);
 
+  // Сброс вращения как в оригинале
   state.targetRotX = 0.10;
   state.targetRotY = 0.00;
 
+  // Центровка и расчёт расстояния
   fitCameraToModel(root);
 }
 
 /* ============================================================
-   fitCameraToModel — старая рабочая логика
+   FIXED fitCameraToModel(root)
+   — вычисляет реальный центр модели и расстояние камеры
    ============================================================ */
 
 function fitCameraToModel(root) {
-  // bounding sphere
   const box = new THREE.Box3().setFromObject(root);
-  const sphere = box.getBoundingSphere(new THREE.Sphere());
 
+  // ⭐ Геометрический центр модели
+  box.getCenter(state.center);
+
+  // Радиус модели для установки дистанции камеры
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
   const radius = sphere.radius || 2;
 
   const fov = camera.fov * Math.PI / 180;
   let dist = radius / Math.sin(fov / 2);
 
+  // мобильный множитель как в 8.html
   const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
   if (isMobile) dist *= 1.55;
 
@@ -110,21 +117,29 @@ function fitCameraToModel(root) {
 }
 
 /* ============================================================
-   updateCameraPosition
+   FIXED updateCameraPosition()
+   — теперь камера смотрит в state.center
    ============================================================ */
 
 function updateCameraPosition() {
   const r = state.radius;
+
   const x = r * Math.sin(state.rotY) * Math.cos(state.rotX);
   const z = r * Math.cos(state.rotY) * Math.cos(state.rotX);
   const y = r * Math.sin(state.rotX);
 
-  camera.position.set(x, y, z);
-  camera.lookAt(0, 0, 0); // ⭐ pivot пока фиксирован в (0,0,0)
+  // ⭐ Теперь камера относительно центра модели, а не (0,0,0)
+  camera.position.set(
+    state.center.x + x,
+    state.center.y + y,
+    state.center.z + z
+  );
+
+  camera.lookAt(state.center);
 }
 
 /* ============================================================
-   resize
+   resize()
    ============================================================ */
 
 export function resize() {
@@ -137,7 +152,7 @@ export function resize() {
 }
 
 /* ============================================================
-   LIGHTS — как в 8.html
+   LIGHTS  —  идентично 8.html
    ============================================================ */
 
 function setupLights() {
@@ -161,15 +176,12 @@ function setupLights() {
   rimCold.position.set(2.5, 3.5, -5);
   scene.add(rimCold);
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.04);
-  scene.add(ambient);
-
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x0a0a0a, 0.07);
-  scene.add(hemi);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.04));
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x0a0a0a, 0.07));
 }
 
 /* ============================================================
-   CONTROLS — копия из 8.html
+   GESTURES — копия поведения из 8.html
    ============================================================ */
 
 function initControls(canvas) {
@@ -180,7 +192,6 @@ function initControls(canvas) {
   let touchMode = null;
   let lastPinchDist = 0;
 
-  // MOUSE
   canvas.addEventListener("mousedown", (e) => {
     isDragging = true;
     lastX = e.clientX;
@@ -209,7 +220,6 @@ function initControls(canvas) {
     );
   });
 
-  // SCROLL
   canvas.addEventListener(
     "wheel",
     (e) => {
@@ -225,11 +235,11 @@ function initControls(canvas) {
     { passive: false }
   );
 
-  // TOUCH
   canvas.addEventListener(
     "touchstart",
     (e) => {
       e.preventDefault();
+
       if (e.touches.length === 1) {
         touchMode = "rotate";
         lastX = e.touches[0].clientX;
@@ -248,7 +258,7 @@ function initControls(canvas) {
       if (!touchMode) return;
       e.preventDefault();
 
-      if (touchMode === "rotate") {
+      if (touchMode === "rotate" && e.touches.length === 1) {
         const t = e.touches[0];
         const dx = t.clientX - lastX;
         const dy = t.clientY - lastY;
