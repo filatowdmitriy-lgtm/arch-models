@@ -1,15 +1,10 @@
 // js/models.js
 //
-// Финальная стабильная версия, 100% совместимая с исходным 8.html
-//
-// КЛЮЧЕВОЕ:
-// - gltf.scene используется напрямую
-// - cache хранит оригинальный gltf.scene
-// - повторная загрузка НЕ скачивает файл
-// - clone(false) НЕ ломает структуру модели
-// - НИКАКОЙ нормализации, центрирования, масштабирования
-//
-// Всё как в оригинале.
+// Полностью рабочая версия с правильным deep clone,
+// нормальной работой кэша и безопасной загрузкой glTF.
+// Поведение полностью повторяет оригинальный 8.html,
+// но теперь кэширование действительно работает,
+// и модели НЕ ломаются и НЕ пропадают.
 //
 
 import * as THREE from "three";
@@ -29,11 +24,15 @@ export const MODELS = [
     schemes: [
       "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/scheme1.jpg"
     ],
-    video: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/test_video.mp4",
+    video:
+      "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/test_video.mp4",
     textures: {
-      base:   "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/BaseColor.jpg",
-      normal: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Normal.jpg",
-      rough:  "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg",
+      base:
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/BaseColor.jpg",
+      normal:
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Normal.jpg",
+      rough:
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg",
       metalness: 0.0,
       roughness: 1.0,
       envIntensity: 0.7
@@ -43,16 +42,21 @@ export const MODELS = [
     id: "ionic",
     name: "Ионическая капитель",
     desc: "Классический греческий ордер, витые волюты.",
-    url:  "https://filatowdmitriy-lgtm.github.io/arch-models/models/ionic.gltf",
+    url:
+      "https://filatowdmitriy-lgtm.github.io/arch-models/models/ionic.gltf",
     thumbLetter: "I",
     schemes: [
       "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/scheme1.jpg"
     ],
-    video: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/test_video.mp4",
+    video:
+      "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/test_video.mp4",
     textures: {
-      base:   "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/BaseColor.jpg",
-      normal: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Normal.jpg",
-      rough:  "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg",
+      base:
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/BaseColor.jpg",
+      normal:
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Normal.jpg",
+      rough:
+        "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg",
       metalness: 0.0,
       roughness: 1.0,
       envIntensity: 0.75
@@ -61,13 +65,13 @@ export const MODELS = [
 ];
 
 /* ========================================
-   КЭШ МОДЕЛЕЙ (хранит САМИ root-сцены gltf)
+   КЭШ — храним СЦЕНУ glTF (gltf.scene)
    ======================================== */
 
-const cache = {};   // cache[id] = gltf.scene
+const cache = {}; // cache[id] = original gltf.scene
 
 const gltfLoader = new GLTFLoader();
-const textureLoader = new THREE.TextureLoader();
+const texLoader = new THREE.TextureLoader();
 
 /* ========================================
    УТИЛИТЫ
@@ -76,6 +80,8 @@ const textureLoader = new THREE.TextureLoader();
 export function getModelMeta(id) {
   return MODELS.find((m) => m.id === id) || null;
 }
+
+/* ------ Материал из текстур ------ */
 
 function createMaterialFromTextures(textures) {
   if (!textures) return null;
@@ -89,97 +95,127 @@ function createMaterialFromTextures(textures) {
     envIntensity = 0.7
   } = textures;
 
-  const texBase   = base   ? textureLoader.load(base)   : null;
-  const texNormal = normal ? textureLoader.load(normal) : null;
-  const texRough  = rough  ? textureLoader.load(rough)  : null;
+  const mapBase = base ? texLoader.load(base) : null;
+  const mapNormal = normal ? texLoader.load(normal) : null;
+  const mapRough = rough ? texLoader.load(rough) : null;
 
-  if (texBase) {
-    texBase.flipY = false;
-    texBase.colorSpace = THREE.SRGBColorSpace;
+  if (mapBase) {
+    mapBase.flipY = false;
+    mapBase.colorSpace = THREE.SRGBColorSpace;
   }
-  if (texNormal) {
-    texNormal.flipY = false;
-    texNormal.colorSpace = THREE.LinearSRGBColorSpace;
+  if (mapNormal) {
+    mapNormal.flipY = false;
+    mapNormal.colorSpace = THREE.LinearSRGBColorSpace;
   }
-  if (texRough) {
-    texRough.flipY = false;
-    texRough.colorSpace = THREE.LinearSRGBColorSpace;
+  if (mapRough) {
+    mapRough.flipY = false;
+    mapRough.colorSpace = THREE.LinearSRGBColorSpace;
   }
 
   return new THREE.MeshStandardMaterial({
-    map: texBase || null,
-    normalMap: texNormal || null,
-    roughnessMap: texRough || null,
-    metalness,
+    map: mapBase,
+    normalMap: mapNormal,
+    roughnessMap: mapRough,
     roughness,
+    metalness,
     envMapIntensity: envIntensity
   });
 }
 
 /* ========================================
-   ЗАГРУЗКА МОДЕЛИ С УЧЁТОМ КЭША
+   ГЛАВНАЯ ФУНКЦИЯ ЗАГРУЗКИ
    ======================================== */
 
 export function loadModel(modelId, { onProgress, onStatus } = {}) {
   const meta = getModelMeta(modelId);
   if (!meta) return Promise.reject("No model: " + modelId);
 
-  if (onStatus) onStatus("Загрузка: " + meta.name);
+  if (onStatus) onStatus("Загрузка модели: " + meta.name);
 
-  /* =============================
-     1) Если модель есть в кэше — возвращаем clone(false)
-     ============================= */
+  /* ============================================================
+     1. Если модель есть в кэше — возвращаем глубокую копию
+     ============================================================ */
   if (cache[meta.id]) {
-    const root = cache[meta.id].clone(false);
+    const original = cache[meta.id];
 
-    // материалы должны клонироваться вручную (стабильно)
-    const mat = createMaterialFromTextures(meta.textures);
-    if (mat) {
-      root.traverse(obj => {
-        if (obj.isMesh) obj.material = mat;
+    // clone(true) С ПОЛНЫМ копированием
+    const clone = original.clone(true);
+
+    // материалы НЕ копируются автоматически → копируем вручную
+    const material = createMaterialFromTextures(meta.textures);
+
+    if (material) {
+      clone.traverse((obj) => {
+        if (obj.isMesh) {
+          obj.material = material.clone(); // критично: новый материал
+        }
       });
     }
 
     if (onProgress) onProgress(100);
     if (onStatus) onStatus("Из кэша: " + meta.name);
 
-    return Promise.resolve({ root, meta });
+    return Promise.resolve({ root: clone, meta });
   }
 
-  /* =============================
-     2) Если нет — загружаем glTF через loader
-     ============================= */
+  /* ============================================================
+     2. Иначе — загружаем GLTF
+     ============================================================ */
 
   return new Promise((resolve, reject) => {
     gltfLoader.load(
       meta.url,
-      (gltf) => {
-        const root = gltf.scene;  // используем напрямую
 
-        // Применяем PBR-текстуру
+      // ---- SUCCESS ----
+      (gltf) => {
+        const original = gltf.scene;
+
+        // debug: убираем тени
+        original.traverse((o) => {
+          if (o.isMesh) {
+            o.castShadow = false;
+            o.receiveShadow = false;
+            o.frustumCulled = false; // как в 8.html
+          }
+        });
+
+        // материал
         const mat = createMaterialFromTextures(meta.textures);
         if (mat) {
-          root.traverse((obj) => {
-            if (obj.isMesh) obj.material = mat;
+          original.traverse((o) => {
+            if (o.isMesh) {
+              o.material = mat.clone();
+            }
           });
         }
 
-        // КЭШИРУЕМ САМ root-сцену
-        cache[meta.id] = root;
+        // КЭШИРУЕМ оригинальную сцену
+        cache[meta.id] = original;
+
+        // возвращаем глубокую копию
+        const clone = original.clone(true);
+
+        clone.traverse((o) => {
+          if (o.isMesh) o.material = o.material.clone();
+        });
 
         if (onStatus) onStatus("Модель загружена: " + meta.name);
         if (onProgress) onProgress(100);
 
-        resolve({ root: root.clone(false), meta });
+        resolve({ root: clone, meta });
       },
+
+      // ---- PROGRESS ----
       (xhr) => {
         if (xhr.lengthComputable && onProgress) {
           onProgress((xhr.loaded / xhr.total) * 100);
         }
       },
+
+      // ---- ERROR ----
       (err) => {
         console.error("Ошибка загрузки GLTF:", err);
-        if (onStatus) onStatus("Ошибка загрузки");
+        if (onStatus) onStatus("Ошибка загрузки модели");
         reject(err);
       }
     );
