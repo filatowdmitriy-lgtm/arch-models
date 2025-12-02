@@ -1,5 +1,5 @@
 // js/models.js
-// Финальная версия — поведение 8.html, нормализация центра и масштаба.
+// Финальная версия — нормализация как в 8.html (правильный pivot + масштаб)
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -92,11 +92,16 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
     gltfLoader.load(
       meta.url,
       (gltf) => {
-        const root = gltf.scene;
 
+        // ⭐ правильная структура — как в 8.html
+        const root = new THREE.Group();
+        const scene = gltf.scene;
+        root.add(scene);
+
+        // применяем PBR материалы
         const mat = createMaterialFromTextures(meta.textures);
         if (mat) {
-          root.traverse(obj => {
+          scene.traverse(obj => {
             if (obj.isMesh) {
               obj.material = mat;
               obj.castShadow = false;
@@ -106,8 +111,8 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
           });
         }
 
-        // ⭐ нормализация как в оригинальном 8.html
-        normalizeModel(root);
+        // ⭐ нормализация pivot + масштаба — 1-в-1 как в 8.html
+        normalizeModel(root, scene);
 
         if (onProgress) onProgress(100);
         if (onStatus) onStatus("Готово");
@@ -130,15 +135,19 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
   });
 }
 
-// ⭐ ТА САМАЯ НОРМАЛИЗАЦИЯ МОДЕЛИ ИЗ 8.HTML
-function normalizeModel(root) {
-  const box = new THREE.Box3().setFromObject(root);
+// ⭐ ТА САМАЯ НОРМАЛИЗАЦИЯ ИЗ 8.HTML
+function normalizeModel(rootGroup, gltfScene) {
+  // bounding box по rootGroup
+  const box = new THREE.Box3().setFromObject(rootGroup);
+
   const center = box.getCenter(new THREE.Vector3());
-  root.position.sub(center);
+  const size   = box.getSize(new THREE.Vector3());
 
-  const size = box.getSize(new THREE.Vector3());
+  // ⭐ центрируем ТОЛЬКО gltf.scene (как в оригинале)
+  gltfScene.position.sub(center);
+
+  // ⭐ масштаб применяем ТОЛЬКО к контейнеру (как в оригинале)
   const maxSize = Math.max(size.x, size.y, size.z) || 1;
-
   const scale = 2.0 / maxSize;
-  root.scale.setScalar(scale);
+  rootGroup.scale.setScalar(scale);
 }
