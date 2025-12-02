@@ -3,41 +3,28 @@
 <head>
   <meta charset="UTF-8" />
   <title>Архитектурные детали — 3D Viewer</title>
-
-  <!--
-    =======================================================
-      Основной HTML-файл приложения Arch Models.
-
-      Содержит три экрана:
-      • Галерея архитектурных моделей
-      • 3D-визуализация (three.js)
-      • Построение (zoom/pan схема)
-      • Видео (blob загрузка)
-
-      ВАЖНО:
-      — Весь UI завязан на id и классах в этом файле.
-      — Структуру менять нельзя, иначе нарушится логика модулей.
-    =======================================================
-  -->
-
   <meta name="viewport"
-        content="width=device-width, initial-scale=1.0,
-                 maximum-scale=1.0, user-scalable=no,
-                 viewport-fit=cover" />
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 
-  <!-- ============================================
-       Встроенные стили интерфейса (как в оригинале)
-       ============================================ -->
+  <!-- ============================
+       СТИЛИ (как в 8.html, без изменений)
+       ============================ -->
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-    html, body {
+    html,
+    body {
       width: 100%;
       height: 100%;
       overscroll-behavior: none;
     }
 
     body {
+      margin: 0;
       background: #050506;
       color: #f5f5f5;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -51,7 +38,7 @@
       flex-direction: column;
     }
 
-    /* ---------- HEADER ---------- */
+    /* ---------- TOP BAR ---------- */
     .app-header {
       padding: 10px 16px;
       display: flex;
@@ -77,11 +64,12 @@
       margin-top: 2px;
     }
 
-    /* ---------- MAIN AREA ---------- */
+    /* ---------- MAIN LAYOUT ---------- */
     .app-main {
       flex: 1;
       position: relative;
       overflow: hidden;
+      display: flex;
     }
 
     /* ---------- ГАЛЕРЕЯ ---------- */
@@ -102,12 +90,17 @@
       -webkit-overflow-scrolling: touch;
     }
 
+    @media (max-width: 640px) {
+      .gallery {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
     .gallery.hidden {
       opacity: 0;
       pointer-events: none;
     }
 
-    /* ---------- КАРТОЧКИ МОДЕЛЕЙ ---------- */
     .model-card {
       background: linear-gradient(145deg, #181820, #101018);
       border-radius: 14px;
@@ -119,6 +112,13 @@
       box-shadow: 0 14px 35px rgba(0, 0, 0, 0.5);
       border: 1px solid rgba(255, 255, 255, 0.04);
       transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+      height: auto;
+    }
+
+    .model-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.7);
+      border-color: rgba(255, 255, 255, 0.16);
     }
 
     .model-thumb {
@@ -132,12 +132,23 @@
       color: rgba(255, 255, 255, 0.2);
       font-size: 40px;
       font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
 
-    .model-caption { font-size: 15px; font-weight: 600; color: #f3f3f3; }
-    .model-desc    { font-size: 13px; color: #a4a4aa; line-height: 1.3; }
+    .model-caption {
+      font-size: 15px;
+      font-weight: 600;
+      color: #f3f3f3;
+    }
 
-    /* ---------- VIEWER WRAPPER ---------- */
+    .model-desc {
+      font-size: 13px;
+      color: #a4a4aa;
+      line-height: 1.3;
+    }
+
+    /* ---------- VIEWER AREA ---------- */
     .viewer-wrapper {
       position: absolute;
       inset: 0;
@@ -154,7 +165,7 @@
       pointer-events: auto;
     }
 
-    /* ---------- TOOLBAR ---------- */
+    /* ---------- TOOLBAR + TABS ---------- */
     .viewer-toolbar {
       position: absolute;
       top: 10px;
@@ -175,9 +186,100 @@
       width: 100%;
     }
 
-    .viewer-model-row { justify-content: center; }
-    .viewer-nav-row   { justify-content: center; flex-wrap: wrap; }
-    .viewer-tabs-row  { justify-content: center; }
+    .viewer-model-row {
+      justify-content: center;
+    }
+
+    .viewer-nav-row {
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .viewer-tabs-row {
+      justify-content: center;
+    }
+
+    .viewer-tabs {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 6px;
+      width: 100%;
+      max-width: 480px;
+      margin: 0 auto;
+      justify-content: center;
+    }
+
+    .btn {
+      background: rgba(0, 0, 0, 0.6);
+      color: #f5f5f5;
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 13px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      cursor: pointer;
+      user-select: none;
+      backdrop-filter: blur(4px);
+      white-space: nowrap;
+      line-height: 1.2;
+      font-family: inherit;
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+    }
+
+    .nav-btn {
+      min-width: 0;
+    }
+
+    .model-label {
+      font-size: 13px;
+      color: #b7b7c0;
+      max-width: 260px;
+      text-align: center;
+    }
+
+    .tab-btn {
+      padding: 7px 10px;
+      font-size: 13px;
+      border-radius: 999px;
+      opacity: 0.9;
+      flex: 1 1 0;
+      min-width: 0;
+      text-align: center;
+    }
+
+    .tab-btn.active {
+      background: linear-gradient(90deg, #ffffff, #8888ff);
+      color: #050506;
+      border-color: transparent;
+    }
+
+    .tab-btn.disabled {
+      opacity: 0.25;
+      pointer-events: none;
+    }
+
+    @media (max-width: 640px) {
+      .viewer-nav-row {
+        justify-content: space-between;
+      }
+
+      .nav-btn {
+        flex: 1 1 calc(33.33% - 6px);
+        text-align: center;
+      }
+
+      .model-label {
+        max-width: none;
+      }
+    }
+
+    .ui-hidden {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-8px);
+    }
 
     .viewer-main {
       position: absolute;
@@ -185,12 +287,30 @@
       touch-action: none;
     }
 
-    canvas { width: 100%; height: 100%; display: block; }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
 
-    /* ---------- СХЕМА ---------- */
+    /* Оверлеи схемы и видео */
+    .alt-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      background: radial-gradient(circle at top, #050506 0%, #020203 60%);
+      z-index: 25;
+      touch-action: none;
+    }
+
     #schemeOverlay img {
       position: absolute;
-      top: 0; left: 0;
+      top: 0;
+      left: 0;
       max-width: none;
       max-height: none;
       transform-origin: 0 0;
@@ -198,9 +318,14 @@
       user-select: none;
       pointer-events: auto;
       will-change: transform;
+      display: block;
     }
 
-    /* ---------- ВИДЕО ---------- */
+    #schemeOverlay {
+      z-index: 20 !important;
+      pointer-events: auto;
+    }
+
     .alt-overlay video {
       max-width: 100%;
       max-height: 100%;
@@ -208,7 +333,7 @@
       background: #050506;
     }
 
-    /* ---------- LOADING ---------- */
+    /* ---------- LOADING OVERLAY ---------- */
     #loading {
       position: absolute;
       inset: 0;
@@ -216,8 +341,7 @@
       align-items: center;
       justify-content: center;
       flex-direction: column;
-      background: radial-gradient(circle at top,
-                  rgba(0,0,0,0.85), rgba(0,0,0,0.96));
+      background: radial-gradient(circle at top, rgba(0,0,0,0.85), rgba(0,0,0,0.96));
       z-index: 40;
     }
 
@@ -225,12 +349,31 @@
       width: 48px;
       height: 48px;
       border-radius: 999px;
-      border: 3px solid rgba(255,255,255,0.08);
+      border: 3px solid rgba(255, 255, 255, 0.08);
       border-top-color: #ffffff;
       animation: spin 0.8s linear infinite;
     }
 
-    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    #loadingText {
+      margin-top: 12px;
+      font-size: 13px;
+      color: #e0e0e0;
+    }
+
+    .loading-bar {
+      margin-top: 10px;
+      width: 140px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      overflow: hidden;
+    }
 
     .loading-bar-inner {
       width: 0%;
@@ -247,13 +390,14 @@
       bottom: 10px;
       font-size: 11px;
       color: #7f7f86;
-      opacity: 0.9;
       z-index: 50;
+      opacity: 0.9;
+      transition: opacity 0.25s ease, transform 0.25s ease;
     }
   </style>
 
   <!-- ============================
-       IMPORTMAP (как в твоём файле)
+       IMPORTMAP (как в 8.html)
        ============================ -->
   <script type="importmap">
   {
@@ -263,12 +407,10 @@
     }
   }
   </script>
-</head>
 
+</head>
 <body>
 <div class="app-root">
-
-  <!-- HEADER -->
   <header class="app-header">
     <div>
       <div class="app-title">АРХИТЕКТУРНЫЕ ДЕТАЛИ</div>
@@ -277,16 +419,12 @@
   </header>
 
   <main class="app-main">
-
     <!-- ГАЛЕРЕЯ -->
     <div class="gallery" id="gallery"></div>
 
-    <!-- VIEWER -->
+    <!-- ВЬЮЕР -->
     <div class="viewer-wrapper" id="viewerWrapper">
-
-      <!-- TOOLBAR -->
       <div class="viewer-toolbar">
-
         <div class="viewer-toolbar-row viewer-model-row">
           <div class="model-label" id="modelLabel"></div>
         </div>
@@ -304,10 +442,8 @@
             <button class="btn tab-btn" id="tabVideo">Видео</button>
           </div>
         </div>
-
       </div>
 
-      <!-- MAIN VIEWER CONTENT -->
       <div class="viewer-main">
         <canvas id="canvas"></canvas>
 
@@ -318,15 +454,11 @@
 
         <!-- ВИДЕО -->
         <div class="alt-overlay" id="videoOverlay">
-          <video id="videoPlayer"
-                 controls
-                 playsinline
-                 webkit-playsinline
-                 preload="metadata"></video>
+          <video id="videoPlayer" controls playsinline webkit-playsinline preload="metadata"></video>
         </div>
       </div>
 
-      <!-- LOADING -->
+      <!-- LOADING OVERLAY -->
       <div id="loading">
         <div class="loader-ring"></div>
         <div id="loadingText">Загрузка...</div>
@@ -335,15 +467,14 @@
         </div>
       </div>
 
-      <!-- STATUS -->
       <div id="status"></div>
-
-    </div> <!-- /viewerWrapper -->
-
+    </div>
   </main>
 </div>
 
-<!-- JS -->
+<!-- ============================
+     ПОДКЛЮЧЕНИЕ ПРИЛОЖЕНИЯ
+     ============================ -->
 <script type="module" src="./js/app.js"></script>
 
 </body>
