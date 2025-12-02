@@ -1,0 +1,1468 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Архитектурные детали — 3D Viewer</title>
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overscroll-behavior: none;
+    }
+
+    body {
+      margin: 0;
+      background: #050506;
+      color: #f5f5f5;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      overflow: hidden;
+    }
+
+    .app-root {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ---------- TOP BAR ---------- */
+    .app-header {
+      padding: 10px 16px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+      background: #050506;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      z-index: 20;
+      flex-shrink: 0;
+    }
+
+    .app-title {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: #bbbbbb;
+    }
+
+    .app-subtitle {
+      font-size: 11px;
+      color: #666;
+      margin-top: 2px;
+    }
+
+    /* ---------- MAIN LAYOUT ---------- */
+    .app-main {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+    }
+
+    /* ---------- ГАЛЕРЕЯ ---------- */
+    .gallery {
+      position: absolute;
+      inset: 0;
+      padding: 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 14px;
+      background: radial-gradient(ellipse at top, #14141a 0%, #050506 55%);
+      z-index: 15;
+      opacity: 1;
+      pointer-events: auto;
+      transition: opacity 0.3s ease;
+      align-content: flex-start;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    @media (max-width: 640px) {
+      .gallery {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .gallery.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .model-card {
+      background: linear-gradient(145deg, #181820, #101018);
+      border-radius: 14px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      cursor: pointer;
+      box-shadow: 0 14px 35px rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+      height: auto;
+    }
+
+    .model-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.7);
+      border-color: rgba(255, 255, 255, 0.16);
+    }
+
+    .model-thumb {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      border-radius: 10px;
+      background: radial-gradient(circle at 30% 0%, #2c2c38 0%, #14141f 35%, #050506 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.2);
+      font-size: 40px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .model-caption {
+      font-size: 15px;
+      font-weight: 600;
+      color: #f3f3f3;
+    }
+
+    .model-desc {
+      font-size: 13px;
+      color: #a4a4aa;
+      line-height: 1.3;
+    }
+
+    /* ---------- VIEWER AREA ---------- */
+    .viewer-wrapper {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      z-index: 10;
+    }
+
+    .viewer-wrapper.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* ---------- TOOLBAR + TABS ---------- */
+    .viewer-toolbar {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: auto;
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+
+    .viewer-toolbar-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      width: 100%;
+    }
+
+    /* строка с названием модели */
+    .viewer-model-row {
+      justify-content: center;
+    }
+
+    .viewer-nav-row {
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .viewer-tabs-row {
+      justify-content: center;
+    }
+
+    .viewer-tabs {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 6px;
+      width: 100%;
+      max-width: 480px;
+      margin: 0 auto;
+      justify-content: center;
+    }
+
+    .btn {
+      background: rgba(0, 0, 0, 0.6);
+      color: #f5f5f5;
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 13px;              /* единый размер шрифта для всех кнопок */
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      cursor: pointer;
+      user-select: none;
+      backdrop-filter: blur(4px);
+      white-space: nowrap;
+      line-height: 1.2;
+      font-family: inherit;
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+    }
+
+    .nav-btn {
+      min-width: 0;
+    }
+
+    .model-label {
+      font-size: 13px;
+      color: #b7b7c0;
+      max-width: 260px;
+      text-align: center;
+    }
+
+    .tab-btn {
+      padding: 7px 10px;
+      font-size: 13px;       /* такой же как у .btn */
+      border-radius: 999px;
+      opacity: 0.9;
+      flex: 1 1 0;
+      min-width: 0;
+      text-align: center;
+    }
+
+    .tab-btn.active {
+      background: linear-gradient(90deg, #ffffff, #8888ff);
+      color: #050506;
+      border-color: transparent;
+    }
+
+    .tab-btn.disabled {
+      opacity: 0.25;
+      pointer-events: none;
+    }
+
+    @media (max-width: 640px) {
+      .viewer-nav-row {
+        justify-content: space-between;
+      }
+
+      .nav-btn {
+        flex: 1 1 calc(33.33% - 6px);
+        text-align: center;
+      }
+
+      .model-label {
+        max-width: none;
+      }
+    }
+
+    /* скрыто UI (при большом зуме схемы) */
+    .ui-hidden {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-8px);
+    }
+
+    .viewer-main {
+      position: absolute;
+      inset: 0;
+      touch-action: none;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+
+    /* Оверлеи для схемы и видео */
+    .alt-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      background: radial-gradient(circle at top, #050506 0%, #020203 60%);
+      z-index: 25;
+      touch-action: none;
+    }
+
+    /* Схема: картинка управляется только через JS */
+    #schemeOverlay img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      max-width: none;
+      max-height: none;
+      transform-origin: 0 0;
+      touch-action: none;
+      user-select: none;
+      pointer-events: auto;
+      will-change: transform;
+      display: block;
+    }
+
+    /* Схема: выше канваса, ниже тулбара */
+    #schemeOverlay {
+      z-index: 20 !important;
+      pointer-events: auto;
+    }
+
+    .alt-overlay video {
+      max-width: 100%;
+      max-height: 100%;
+      border-radius: 10px;
+      background: #050506;
+    }
+
+    /* ---------- LOADING OVERLAY ---------- */
+    #loading {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      background: radial-gradient(circle at top, rgba(0,0,0,0.85), rgba(0,0,0,0.96));
+      z-index: 40;
+    }
+
+    .loader-ring {
+      width: 48px;
+      height: 48px;
+      border-radius: 999px;
+      border: 3px solid rgba(255, 255, 255, 0.08);
+      border-top-color: #ffffff;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    #loadingText {
+      margin-top: 12px;
+      font-size: 13px;
+      color: #e0e0e0;
+    }
+
+    .loading-bar {
+      margin-top: 10px;
+      width: 140px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .loading-bar-inner {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #ffffff, #8888ff);
+      border-radius: inherit;
+      transition: width 0.15s ease;
+    }
+
+    /* ---------- STATUS ---------- */
+    #status {
+      position: absolute;
+      left: 12px;
+      bottom: 10px;
+      font-size: 11px;
+      color: #7f7f86;
+      z-index: 50;
+      opacity: 0.9;
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+  </style>
+
+  <!-- importmap -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.153.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.153.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <!-- Telegram Mini App: готовность и auto-expand -->
+  <script>
+    (function () {
+      if (window.Telegram && Telegram.WebApp) {
+        try {
+          Telegram.WebApp.ready();
+          Telegram.WebApp.expand();
+        } catch (e) {}
+      }
+    })();
+  </script>
+</head>
+<body>
+<div class="app-root">
+  <header class="app-header">
+    <div>
+      <div class="app-title">АРХИТЕКТУРНЫЕ ДЕТАЛИ</div>
+      <div class="app-subtitle">Крути-Верти</div>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <!-- ГАЛЕРЕЯ -->
+    <div class="gallery" id="gallery"></div>
+
+    <!-- ВЬЮЕР -->
+    <div class="viewer-wrapper" id="viewerWrapper">
+      <div class="viewer-toolbar">
+        <!-- Название модели отдельно, выше кнопок -->
+        <div class="viewer-toolbar-row viewer-model-row">
+          <div class="model-label" id="modelLabel"></div>
+        </div>
+
+        <!-- Навигационные кнопки по центру, в нужном порядке -->
+        <div class="viewer-toolbar-row viewer-nav-row">
+          <button class="btn nav-btn" id="prevBtn">← Предыдущая</button>
+          <button class="btn nav-btn" id="backBtn">Галерея</button>
+          <button class="btn nav-btn" id="nextBtn">Следующая →</button>
+        </div>
+
+        <!-- Вкладки режимов -->
+        <div class="viewer-toolbar-row viewer-tabs-row">
+          <div class="viewer-tabs">
+            <button class="btn tab-btn active" id="tab3d">3D просмотр</button>
+            <button class="btn tab-btn" id="tabScheme">Построение</button>
+            <button class="btn tab-btn" id="tabVideo">Видео</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="viewer-main">
+        <canvas id="canvas"></canvas>
+
+        <!-- СХЕМА -->
+        <div class="alt-overlay" id="schemeOverlay">
+          <img id="schemeImage" src="" alt="Схема построения" />
+        </div>
+
+        <!-- ВИДЕО -->
+        <div class="alt-overlay" id="videoOverlay">
+          <video id="videoPlayer" controls playsinline webkit-playsinline preload="metadata"></video>
+        </div>
+      </div>
+
+      <!-- LOADING OVERLAY -->
+      <div id="loading">
+        <div class="loader-ring"></div>
+        <div id="loadingText">Загрузка...</div>
+        <div class="loading-bar">
+          <div class="loading-bar-inner" id="progressBar"></div>
+        </div>
+      </div>
+
+      <div id="status"></div>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+  import * as THREE from "three";
+  import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+  /* ===============================
+     МОДЕЛИ ДЛЯ ГАЛЕРЕИ
+  =============================== */
+  const MODELS = [
+    {
+      id: "doric",
+      name: "Дорическая капитель",
+      desc: "Архаический строгий стиль.",
+      url: "https://filatowdmitriy-lgtm.github.io/arch-models/models/doric.gltf",
+      thumbLetter: "D",
+      schemes: ["https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/scheme1.jpg"],
+      video: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/test_video.mp4"
+    },
+    {
+      id: "ionic",
+      name: "Ионическая капитель",
+      desc: "Классический греческий ордер, витые волюты.",
+      url: "https://filatowdmitriy-lgtm.github.io/arch-models/models/ionic.gltf",
+      thumbLetter: "I",
+      schemes: ["https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/scheme1.jpg"],
+      video: "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/test_video.mp4"
+    }
+  ];
+
+  /* ===============================
+     DOM ЭЛЕМЕНТЫ
+  =============================== */
+  const galleryEl      = document.getElementById("gallery");
+  const viewerWrapper  = document.getElementById("viewerWrapper");
+  const viewerToolbar  = document.querySelector(".viewer-toolbar");
+  const backBtn        = document.getElementById("backBtn");
+  const prevBtn        = document.getElementById("prevBtn");
+  const nextBtn        = document.getElementById("nextBtn");
+  const modelLabelEl   = document.getElementById("modelLabel");
+  const loadingEl      = document.getElementById("loading");
+  const loadingTextEl  = document.getElementById("loadingText");
+  const progressBarEl  = document.getElementById("progressBar");
+  const statusEl       = document.getElementById("status");
+  const canvas         = document.getElementById("canvas");
+
+  const schemeOverlay  = document.getElementById("schemeOverlay");
+  const videoOverlay   = document.getElementById("videoOverlay");
+  const schemeImg      = document.getElementById("schemeImage");
+  const videoEl        = document.getElementById("videoPlayer");
+  const tab3dBtn       = document.getElementById("tab3d");
+  const tabSchemeBtn   = document.getElementById("tabScheme");
+  const tabVideoBtn    = document.getElementById("tabVideo");
+
+  let scene, camera, renderer;
+  let currentModel = null;
+  let currentModelId = null;
+  let activeView = "3d";
+
+  /* ===============================
+     КЭШ МОДЕЛЕЙ
+  =============================== */
+  const cache = {};
+
+  /* ===============================
+     СОСТОЯНИЕ КАМЕРЫ
+  =============================== */
+  const state = {
+    radius: 4.5,
+    minRadius: 2.0,
+    maxRadius: 12.0,
+    rotX: 0.10,
+    rotY: 0.00,
+    targetRotX: 0.10,
+    targetRotY: 0.00
+  };
+
+  /* ===============================
+     СХЕМА: ПАРАМЕТРЫ ZOOM/PAN
+  =============================== */
+  let schemeScale = 1;        // пользовательский множитель (1–4)
+  let schemeBaseScale = 1;    // базовый fit-to-screen масштаб
+  let schemeTx = 0;           // смещение от центра
+  let schemeTy = 0;
+  let schemeActiveIndex = 0;
+
+  let schemeIsDragging = false;
+  let schemeLastX = 0;
+  let schemeLastY = 0;
+
+  let schemeTouchMode = null;
+  let schemeLastPinchDist = 0;
+  let schemeStartX = 0;
+  let schemeStartY = 0;
+  let schemeEndX = 0;
+  let schemeEndY = 0;
+
+  /* UI авто-хайд при зуме схемы */
+  let uiHiddenByZoom = false;
+  let uiTempShowTimeout = null;
+
+  /* ===============================
+     ИНИЦИАЛИЗАЦИЯ THREE.JS
+  =============================== */
+  initThree();
+  buildGallery();
+  showGallery();
+  initSchemeGestures();
+  initVideoMetadataHack();
+
+  function initThree() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x050506);
+
+    camera = new THREE.PerspectiveCamera(
+      40,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      50
+    );
+    updateCameraPosition();
+
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: false
+    });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.BasicShadowMap;
+
+    /* ---------- СТУДИЙНОЕ ОСВЕЩЕНИЕ ---------- */
+    const zenith = new THREE.DirectionalLight(0xf5f8ff, 0.0);
+    zenith.position.set(0, 11, 2);
+    scene.add(zenith);
+
+    const key = new THREE.DirectionalLight(0xffc4a0, 1.85);
+    key.position.set(5.5, 6.0, 3.5);
+    key.castShadow = false;
+    scene.add(key);
+
+    const fill = new THREE.DirectionalLight(0xcad8ff, 0.35);
+    fill.position.set(-7, 3.5, 2);
+    scene.add(fill);
+
+    const rim = new THREE.DirectionalLight(0xffffff, 0.5);
+    rim.position.set(-3.5, 5, -7.5);
+    scene.add(rim);
+
+    const rimCold = new THREE.DirectionalLight(0xd8e4ff, 0.1);
+    rimCold.position.set(2.5, 3.5, -5);
+    scene.add(rimCold);
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.04);
+    scene.add(ambient);
+
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x0a0a0a, 0.07);
+    scene.add(hemi);
+
+    window.addEventListener("resize", onWindowResize);
+
+    initControls();
+
+    renderer.setAnimationLoop(() => {
+      state.rotX += (state.targetRotX - state.rotX) * 0.22;
+      state.rotY += (state.targetRotY - state.rotY) * 0.22;
+
+      updateCameraPosition();
+      renderer.render(scene, camera);
+    });
+  }
+
+  function updateCameraPosition() {
+    const r = state.radius;
+    const x = r * Math.sin(state.rotY) * Math.cos(state.rotX);
+    const z = r * Math.cos(state.rotY) * Math.cos(state.rotX);
+    const y = r * Math.sin(state.rotX);
+
+    camera.position.set(x, y, z);
+    camera.lookAt(0, 0, 0);
+  }
+
+  function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // при смене размера пересчитаем fit-to-screen для схемы
+    if (activeView === "scheme") {
+      resetSchemeTransform();
+    }
+  }
+
+  /* ===============================
+     УПРАВЛЕНИЕ МЫШЬЮ + ТАЧЕМ (3D)
+  =============================== */
+  function initControls() {
+    let isDragging = false;
+    let lastX = 0, lastY = 0;
+    let touchMode = null;
+    let lastPinchDist = 0;
+
+    canvas.addEventListener("mousedown", (e) => {
+      isDragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+    });
+
+    window.addEventListener("mouseup", () => {
+      isDragging = false;
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!isDragging) return;
+
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+
+      lastX = e.clientX;
+      lastY = e.clientY;
+
+      state.targetRotY += dx * -0.005;
+      state.targetRotX += dy * 0.005;
+
+      state.targetRotX = Math.max(
+        -Math.PI / 2 + 0.2,
+        Math.min(Math.PI / 2 - 0.2, state.targetRotX)
+      );
+    });
+
+    canvas.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const delta = e.deltaY * 0.002;
+
+      state.radius = THREE.MathUtils.clamp(
+        state.radius + delta,
+        state.minRadius,
+        state.maxRadius
+      );
+    }, { passive: false });
+
+    canvas.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        touchMode = "rotate";
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
+      } else if (e.touches.length === 2) {
+        touchMode = "zoom";
+        lastPinchDist = pinchDistance(e.touches[0], e.touches[1]);
+      }
+    }, { passive: false });
+
+    canvas.addEventListener("touchmove", (e) => {
+      if (!touchMode) return;
+      e.preventDefault();
+
+      if (touchMode === "rotate" && e.touches.length === 1) {
+        const t = e.touches[0];
+        const dx = t.clientX - lastX;
+        const dy = t.clientY - lastY;
+
+        lastX = t.clientX;
+        lastY = t.clientY;
+
+        state.targetRotY += dx * -0.008;
+        state.targetRotX += dy * 0.008;
+
+        state.targetRotX = Math.max(
+          -Math.PI / 2 + 0.2,
+          Math.min(Math.PI / 2 - 0.2, state.targetRotX)
+        );
+      } else if (touchMode === "zoom" && e.touches.length === 2) {
+        const dist = pinchDistance(e.touches[0], e.touches[1]);
+        const delta = (lastPinchDist - dist) * 0.01;
+
+        lastPinchDist = dist;
+
+        state.radius = THREE.MathUtils.clamp(
+          state.radius + delta,
+          state.minRadius,
+          state.maxRadius
+        );
+      }
+    }, { passive: false });
+
+    window.addEventListener("touchend", () => {
+      touchMode = null;
+    });
+
+    function pinchDistance(t1, t2) {
+      const dx = t1.clientX - t2.clientX;
+      const dy = t1.clientY - t2.clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+  }
+
+  /* ===============================
+     ГАЛЕРЕЯ
+  =============================== */
+  function buildGallery() {
+    galleryEl.innerHTML = "";
+
+    MODELS.forEach((m) => {
+      const card = document.createElement("div");
+      card.className = "model-card";
+      card.dataset.model = m.id;
+
+      const thumb = document.createElement("div");
+      thumb.className = "model-thumb";
+      thumb.textContent = m.thumbLetter || m.name.charAt(0);
+
+      const caption = document.createElement("div");
+      caption.className = "model-caption";
+      caption.textContent = m.name;
+
+      const desc = document.createElement("div");
+      desc.className = "model-desc";
+      desc.textContent = m.desc;
+
+      card.appendChild(thumb);
+      card.appendChild(caption);
+      card.appendChild(desc);
+
+      card.addEventListener("click", () => {
+        openViewerForModel(m.id);
+      });
+
+      galleryEl.appendChild(card);
+    });
+  }
+
+  function showGallery() {
+    galleryEl.classList.remove("hidden");
+    viewerWrapper.classList.remove("visible");
+    setStatus("");
+  }
+
+  function openViewerForModel(modelId) {
+    const m = MODELS.find((x) => x.id === modelId);
+    if (!m) return;
+
+    modelLabelEl.textContent = m.name;
+
+    galleryEl.classList.add("hidden");
+    viewerWrapper.classList.add("visible");
+
+    configureViewTabsForModel(m);
+    loadModel(modelId);
+  }
+
+  function getModelIndex(id) {
+    return MODELS.findIndex((m) => m.id === id);
+  }
+
+  backBtn.addEventListener("click", showGallery);
+
+  nextBtn.addEventListener("click", () => {
+    if (!currentModelId) {
+      openViewerForModel(MODELS[0].id);
+      return;
+    }
+    let idx = getModelIndex(currentModelId);
+    idx = (idx + 1) % MODELS.length;
+    openViewerForModel(MODELS[idx].id);
+  });
+
+  prevBtn.addEventListener("click", () => {
+    if (!currentModelId) {
+      openViewerForModel(MODELS[0].id);
+      return;
+    }
+    let idx = getModelIndex(currentModelId);
+    idx = (idx - 1 + MODELS.length) % MODELS.length;
+    openViewerForModel(MODELS[idx].id);
+  });
+
+  tab3dBtn.addEventListener("click", () => setViewMode("3d"));
+  tabSchemeBtn.addEventListener("click", () => {
+    const m = getCurrentModelMeta();
+    if (!m || !m.schemes || m.schemes.length === 0) return;
+    setViewMode("scheme");
+  });
+  tabVideoBtn.addEventListener("click", () => {
+    const m = getCurrentModelMeta();
+    if (!m || !m.video) return;
+    setViewMode("video");
+  });
+
+  /* ===============================
+     ЗАГРУЗКА МОДЕЛИ (pivot + кэш)
+  =============================== */
+  function loadModel(modelId) {
+    const m = MODELS.find((x) => x.id === modelId);
+    if (!m) return;
+
+    currentModelId = modelId;
+    showLoading("Загрузка…", 0);
+    setStatus("Загрузка: " + m.name);
+
+    if (cache[m.id]) {
+      const clone = cache[m.id].clone(true);
+      setModel(clone);
+      hideLoading();
+      setStatus("Модель из кэша: " + m.name);
+      return;
+    }
+
+    const loader = new GLTFLoader();
+
+    loader.load(
+      m.url,
+      (gltf) => {
+        const root = new THREE.Group();
+        root.add(gltf.scene);
+
+        // ===== ДОРИЧЕСКАЯ =====
+        if (m.id === "doric") {
+          const texBase = new THREE.TextureLoader().load(
+            "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/BaseColor.jpg"
+          );
+          const texNormal = new THREE.TextureLoader().load(
+            "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Normal.jpg"
+          );
+          const texRough = new THREE.TextureLoader().load(
+            "https://filatowdmitriy-lgtm.github.io/arch-models/textures/doric/Roughness.jpg"
+          );
+
+          texBase.flipY = false;
+          texNormal.flipY = false;
+          texRough.flipY = false;
+
+          texBase.colorSpace   = THREE.SRGBColorSpace;
+          texNormal.colorSpace = THREE.LinearSRGBColorSpace;
+          texRough.colorSpace  = THREE.LinearSRGBColorSpace;
+
+          const mat = new THREE.MeshStandardMaterial({
+            map: texBase,
+            normalMap: texNormal,
+            roughnessMap: texRough,
+            metalness: 0.0,
+            roughness: 1.0,
+            envMapIntensity: 0.7,
+          });
+
+          root.traverse((obj) => {
+            if (obj.isMesh) {
+              obj.material = mat;
+              obj.castShadow = false;
+              obj.receiveShadow = false;
+            }
+          });
+        }
+
+        // ===== ИОНИЧЕСКАЯ =====
+        if (m.id === "ionic") {
+          const texBase = new THREE.TextureLoader().load(
+            "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/BaseColor.jpg"
+          );
+          const texNormal = new THREE.TextureLoader().load(
+            "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Normal.jpg"
+          );
+          const texRough = new THREE.TextureLoader().load(
+            "https://filatowdmitriy-lgtm.github.io/arch-models/textures/ionic/Roughness.jpg"
+          );
+
+          texBase.flipY = false;
+          texNormal.flipY = false;
+          texRough.flipY = false;
+
+          texBase.colorSpace   = THREE.SRGBColorSpace;
+          texNormal.colorSpace = THREE.LinearSRGBColorSpace;
+          texRough.colorSpace  = THREE.LinearSRGBColorSpace;
+
+          const mat = new THREE.MeshStandardMaterial({
+            map: texBase,
+            normalMap: texNormal,
+            roughnessMap: texRough,
+            metalness: 0.0,
+            roughness: 1.0,
+            envMapIntensity: 0.75,
+          });
+
+          root.traverse((obj) => {
+            if (obj.isMesh) {
+              obj.material = mat;
+              obj.castShadow = false;
+              obj.receiveShadow = false;
+            }
+          });
+        }
+
+        const box = new THREE.Box3().setFromObject(root);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+
+        gltf.scene.position.sub(center);
+
+        const maxSize = Math.max(size.x, size.y, size.z);
+        if (maxSize > 0) {
+          const base = 2.0;
+          const scale = base / maxSize;
+          root.scale.setScalar(scale);
+
+          const box2 = new THREE.Box3().setFromObject(root);
+          const sphere = box2.getBoundingSphere(new THREE.Sphere());
+          const baseRadius = sphere.radius || base;
+
+          const fovRad = camera.fov * Math.PI / 180;
+          let dist = baseRadius / Math.sin(fovRad / 2);
+
+          const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
+          const distanceFactor = isMobile ? 1.55 : 1;
+          dist *= distanceFactor;
+
+          state.radius = dist;
+          state.targetRadius = dist;
+
+          state.minRadius = dist * 0.4;
+          state.maxRadius = dist * 6.0;
+        }
+
+        cache[m.id] = root.clone(true);
+
+        setModel(root);
+
+        hideLoading();
+        setStatus("Модель загружена: " + m.name);
+      },
+
+      (xhr) => {
+        if (xhr.lengthComputable) {
+          const percent = (xhr.loaded / xhr.total) * 100;
+          showLoading("Загрузка: " + percent.toFixed(0) + "%", percent);
+        } else {
+          showLoading("Загрузка…", null);
+        }
+      },
+
+      (err) => {
+        console.error("Ошибка загрузки модели:", err);
+        hideLoading();
+        setStatus("Ошибка загрузки модели");
+        alert("Ошибка загрузки модели.");
+      }
+    );
+  }
+
+  function setModel(root) {
+    if (currentModel) {
+      scene.remove(currentModel);
+    }
+    currentModel = root;
+    scene.add(currentModel);
+
+    state.targetRotX = 0.10;
+    state.targetRotY = 0.00;
+
+    setViewMode("3d");
+  }
+
+  /* ===============================
+     ВСПОМОГАТЕЛЬНОЕ ДЛЯ ВКЛАДОК
+  =============================== */
+  function getCurrentModelMeta() {
+    if (!currentModelId) return null;
+    return MODELS.find((m) => m.id === currentModelId) || null;
+  }
+
+  function configureViewTabsForModel(m) {
+    const hasScheme = m.schemes && m.schemes.length > 0;
+    const hasVideo  = !!m.video;
+
+    schemeActiveIndex = 0;
+    resetSchemeTransform();
+
+    if (hasScheme) {
+      tabSchemeBtn.classList.remove("disabled");
+      schemeImg.src = m.schemes[schemeActiveIndex];
+    } else {
+      tabSchemeBtn.classList.add("disabled");
+      schemeImg.removeAttribute("src");
+    }
+
+    if (hasVideo) {
+      tabVideoBtn.classList.remove("disabled");
+
+      // Важно: грузим через fetch → blob, чтобы таймлайн был полный
+      fetch(m.video)
+        .then(r => r.blob())
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          videoEl.src = url;
+          videoEl.load();
+        })
+        .catch(err => {
+          console.error("Ошибка загрузки видео:", err);
+          videoEl.removeAttribute("src");
+          videoEl.load();
+        });
+
+    } else {
+      tabVideoBtn.classList.add("disabled");
+      videoEl.removeAttribute("src");
+      videoEl.load();
+    }
+
+    setViewMode("3d");
+  }
+
+  function setViewMode(mode) {
+    activeView = mode;
+
+    tab3dBtn.classList.toggle("active", mode === "3d");
+    tabSchemeBtn.classList.toggle("active", mode === "scheme");
+    tabVideoBtn.classList.toggle("active", mode === "video");
+
+    // ----- СХЕМА -----
+    if (schemeOverlay) {
+      const isScheme = mode === "scheme";
+      schemeOverlay.style.display = isScheme ? "flex" : "none";
+
+      if (isScheme) {
+        resetSchemeTransform();
+      }
+    }
+
+    // ----- ВИДЕО -----
+    if (videoOverlay) {
+      const isVideo = mode === "video";
+      videoOverlay.style.display = isVideo ? "flex" : "none";
+      if (!isVideo && !videoEl.paused) {
+        videoEl.pause();
+      }
+    }
+
+    // При выходе из схемы обязательно показываем UI
+    if (mode !== "scheme") {
+      setUiHidden(false);
+    }
+  }
+
+  /* ===============================
+     LOADING UI
+  =============================== */
+  function showLoading(text, percent) {
+    loadingEl.style.display = "flex";
+    loadingTextEl.textContent = text;
+    if (typeof percent === "number") {
+      progressBarEl.style.width = percent.toFixed(0) + "%";
+    } else {
+      progressBarEl.style.width = "15%";
+    }
+  }
+
+  function hideLoading() {
+    loadingEl.style.display = "none";
+  }
+
+  function setStatus(text) {
+    statusEl.textContent = text || "";
+  }
+
+  document.addEventListener(
+    "touchmove",
+    (e) => {
+      if (viewerWrapper.classList.contains("visible")) {
+        e.preventDefault();
+      }
+    },
+    { passive: false }
+  );
+
+  /* ===============================
+     UI AUTO-HIDE HELPERS
+  =============================== */
+  function setUiHidden(hidden) {
+    uiHiddenByZoom = hidden;
+    if (!viewerToolbar) return;
+    if (hidden) {
+      viewerToolbar.classList.add("ui-hidden");
+      statusEl.classList.add("ui-hidden");
+    } else {
+      viewerToolbar.classList.remove("ui-hidden");
+      statusEl.classList.remove("ui-hidden");
+    }
+  }
+
+  function updateUiVisibilityByScale() {
+    if (activeView !== "scheme") {
+      setUiHidden(false);
+      return;
+    }
+    const shouldHide = schemeScale > 1.1;
+    setUiHidden(shouldHide);
+  }
+
+  /* ===============================
+     СХЕМА: FIT-TO-SCREEN, RESET, APPLY
+  =============================== */
+
+  function computeFitScale() {
+    if (!schemeOverlay || !schemeImg) return 1;
+    const rect = schemeOverlay.getBoundingClientRect();
+    const w = schemeImg.naturalWidth  || rect.width;
+    const h = schemeImg.naturalHeight || rect.height;
+    if (!w || !h) return 1;
+    const scale = Math.min(rect.width / w, rect.height / h);
+    return scale > 0 ? scale : 1;
+  }
+
+  function applySchemeTransform() {
+    if (!schemeOverlay || !schemeImg) return;
+
+    const rect = schemeOverlay.getBoundingClientRect();
+    const w = schemeImg.naturalWidth  || rect.width;
+    const h = schemeImg.naturalHeight || rect.height;
+
+    const totalScale = schemeBaseScale * schemeScale;
+
+    const imgW = w * totalScale;
+    const imgH = h * totalScale;
+
+    const baseX = (rect.width  - imgW) / 2;
+    const baseY = (rect.height - imgH) / 2;
+
+    const x = baseX + schemeTx;
+    const y = baseY + schemeTy;
+
+    schemeImg.style.transform = `translate(${x}px, ${y}px) scale(${totalScale})`;
+
+    updateUiVisibilityByScale();
+  }
+
+  function resetSchemeTransform() {
+    if (!schemeOverlay || !schemeImg) return;
+
+    const perform = () => {
+      schemeBaseScale = computeFitScale();
+      schemeScale = 1;
+      schemeTx = 0;
+      schemeTy = 0;
+      applySchemeTransform();
+    };
+
+    if (!schemeImg.naturalWidth) {
+      schemeImg.onload = () => {
+        perform();
+        schemeImg.onload = null;
+      };
+    } else {
+      perform();
+    }
+  }
+
+  /* ===============================
+     СХЕМА: GESTURES (ZOOM / PAN / SWIPE / DOUBLE TAP)
+  =============================== */
+  function initSchemeGestures() {
+    const overlay = schemeOverlay;
+    const img = schemeImg;
+
+    if (!overlay || !img) return;
+
+    function clampScale(s) {
+      return Math.min(4, Math.max(1, s)); // пользовательский диапазон 1–4
+    }
+
+    function zoomAtPoint(clientX, clientY, newUserScale) {
+      newUserScale = clampScale(newUserScale);
+
+      // если почти базовый масштаб — просто ресет
+      if (Math.abs(newUserScale - 1) < 1e-4) {
+        resetSchemeTransform();
+        return;
+      }
+
+      const rect = overlay.getBoundingClientRect();
+      const w = img.naturalWidth  || rect.width;
+      const h = img.naturalHeight || rect.height;
+
+      const sx = clientX - rect.left;
+      const sy = clientY - rect.top;
+
+      const totalBefore = schemeBaseScale * schemeScale;
+      const totalAfter  = schemeBaseScale * newUserScale;
+
+      const imgWBefore = w * totalBefore;
+      const imgHBefore = h * totalBefore;
+      const baseXBefore = (rect.width  - imgWBefore) / 2;
+      const baseYBefore = (rect.height - imgHBefore) / 2;
+
+      // точка внутри изображения до зума (в координатах исходной текстуры)
+      const lx = (sx - (baseXBefore + schemeTx)) / totalBefore;
+      const ly = (sy - (baseYBefore + schemeTy)) / totalBefore;
+
+      const imgWAfter = w * totalAfter;
+      const imgHAfter = h * totalAfter;
+      const baseXAfter = (rect.width  - imgWAfter) / 2;
+      const baseYAfter = (rect.height - imgHAfter) / 2;
+
+      schemeTx = sx - (baseXAfter + lx * totalAfter);
+      schemeTy = sy - (baseYAfter + ly * totalAfter);
+
+      schemeScale = newUserScale;
+      applySchemeTransform();
+    }
+
+    function handleSwipeIfNeeded() {
+      const m = getCurrentModelMeta();
+      if (!m || !m.schemes || m.schemes.length <= 1) return;
+      if (schemeScale !== 1) return; // свайпы только при fit-масштабе
+
+      const dx = schemeEndX - schemeStartX;
+      const dy = schemeEndY - schemeStartY;
+
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return;
+
+      const dir = dx < 0 ? 1 : -1; // влево — следующая, вправо — предыдущая
+      const count = m.schemes.length;
+      schemeActiveIndex = (schemeActiveIndex + dir + count) % count;
+      schemeImg.src = m.schemes[schemeActiveIndex];
+
+      resetSchemeTransform();
+    }
+
+    // ----- МЫШЬ -----
+    overlay.addEventListener("mousedown", (e) => {
+      if (activeView !== "scheme") return;
+      schemeIsDragging = true;
+      schemeLastX = e.clientX;
+      schemeLastY = e.clientY;
+      schemeStartX = e.clientX;
+      schemeStartY = e.clientY;
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (!schemeIsDragging) return;
+      schemeIsDragging = false;
+      schemeEndX = schemeLastX;
+      schemeEndY = schemeLastY;
+      handleSwipeIfNeeded();
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!schemeIsDragging || activeView !== "scheme") return;
+
+      const dx = e.clientX - schemeLastX;
+      const dy = e.clientY - schemeLastY;
+
+      schemeLastX = e.clientX;
+      schemeLastY = e.clientY;
+
+      // При fit-масштабе (schemeScale == 1) — не двигаем
+      if (schemeScale <= 1.001) return;
+
+      schemeTx += dx;
+      schemeTy += dy;
+      applySchemeTransform();
+    });
+
+    // ЗУМ КОЛЕСОМ (в точку курсора)
+    overlay.addEventListener("wheel", (e) => {
+      if (activeView !== "scheme") return;
+      e.preventDefault();
+
+      const delta = -e.deltaY * 0.0015;
+      const newUserScale = schemeScale + delta;
+
+      zoomAtPoint(e.clientX, e.clientY, newUserScale);
+    }, { passive: false });
+
+    // ----- ТАЧ -----
+    overlay.addEventListener("touchstart", (e) => {
+      if (activeView !== "scheme") return;
+      if (e.touches.length === 1) {
+        schemeTouchMode = "pan";
+        const t = e.touches[0];
+        schemeLastX = t.clientX;
+        schemeLastY = t.clientY;
+        schemeStartX = t.clientX;
+        schemeStartY = t.clientY;
+      } else if (e.touches.length === 2) {
+        schemeTouchMode = "zoom";
+        schemeLastPinchDist = schemePinchDist(e.touches[0], e.touches[1]);
+      }
+    }, { passive: false });
+
+    overlay.addEventListener("touchmove", (e) => {
+      if (activeView !== "scheme") return;
+      e.preventDefault();
+
+      if (schemeTouchMode === "pan" && e.touches.length === 1) {
+        const t = e.touches[0];
+        const dx = t.clientX - schemeLastX;
+        const dy = t.clientY - schemeLastY;
+        schemeLastX = t.clientX;
+        schemeLastY = t.clientY;
+
+        if (schemeScale <= 1.001) return;
+
+        schemeTx += dx;
+        schemeTy += dy;
+        applySchemeTransform();
+      } else if (schemeTouchMode === "zoom" && e.touches.length === 2) {
+        const dist = schemePinchDist(e.touches[0], e.touches[1]);
+        const delta = (dist - schemeLastPinchDist) * 0.005;
+        schemeLastPinchDist = dist;
+
+        const newUserScale = schemeScale + delta;
+        zoomAtPoint(
+          (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          (e.touches[0].clientY + e.touches[1].clientY) / 2,
+          newUserScale
+        );
+      }
+    }, { passive: false });
+
+    window.addEventListener("touchend", (e) => {
+      if (activeView !== "scheme") return;
+      if (schemeTouchMode === "pan" && e.touches.length === 0) {
+        schemeEndX = schemeLastX;
+        schemeEndY = schemeLastY;
+        handleSwipeIfNeeded();
+      }
+      if (e.touches.length === 0) {
+        schemeTouchMode = null;
+      }
+    });
+
+    function schemePinchDist(a, b) {
+      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    }
+
+    // DOUBLE TAP / DOUBLE CLICK — zoom в точку / reset
+    let lastTapTime = 0;
+    overlay.addEventListener("click", (e) => {
+      if (activeView !== "scheme") return;
+      const now = Date.now();
+      const dt = now - lastTapTime;
+      lastTapTime = now;
+
+      // двойной тап
+      if (dt < 300) {
+        if (schemeScale <= 1.01) {
+          zoomAtPoint(e.clientX, e.clientY, 2.0);
+        } else {
+          resetSchemeTransform();
+        }
+        return;
+      }
+
+      // одиночный тап — показать UI на пару секунд, если картинка увеличена
+      if (schemeScale > 1.1 && uiHiddenByZoom) {
+        setUiHidden(false);
+        if (uiTempShowTimeout) {
+          clearTimeout(uiTempShowTimeout);
+        }
+        uiTempShowTimeout = setTimeout(() => {
+          if (schemeScale > 1.1 && activeView === "scheme") {
+            setUiHidden(true);
+          }
+        }, 2000);
+      }
+    });
+  }
+
+  /* ===============================
+     ВИДЕО: HACK ДЛЯ METADATA
+  =============================== */
+  function initVideoMetadataHack() {
+    if (!videoEl) return;
+    videoEl.addEventListener("loadedmetadata", () => {
+      try {
+        videoEl.currentTime = 0.001;
+        videoEl.currentTime = 0;
+      } catch (e) {}
+    });
+  }
+</script>
+</body>
+</html>
