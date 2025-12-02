@@ -2,84 +2,76 @@
 //
 // Главный модуль приложения.
 // Здесь мы:
-// - получаем все нужные DOM элементы;
-// - инициализируем viewer.js;
-// - инициализируем gallery.js;
-// - запускаем приложение.
+// - получаем все нужные DOM-элементы;
+// - инициализируем viewer (вкладки, 3D, схемы, видео);
+// - инициализируем галерею моделей;
+// - связываем выбор модели в галерее с 3D-вьюером.
 //
-// Логика интерфейса, схем, видео и three.js полностью находится в отдельных модулях.
+// Вся тяжёлая логика вынесена в отдельные модули:
+//   - viewer.js      — логика вкладок + связь с threeViewer/scheme/video
+//   - threeViewer.js — three.js-сцена, камера, жесты, авто-камера
+//   - gallery.js     — карточки моделей и выбор
+//   - models.js      — загрузка моделей, кэш, материалы
+//   - scheme.js      — логика работы со схемами (зум/пан/двойной тап)
+//   - video.js       — видео через blob + таймлайн
 //
-
-// import { MODELS } from "./models.js";  // больше не нужен, использовался только для manifest
 
 import { initGallery } from "./gallery.js";
 import { initViewer } from "./viewer.js";
 
-// Telegram Mini App: ready() + expand()
-// Полный перенос поведения из 8.html
-(function () {
-  if (window.Telegram && Telegram.WebApp) {
-    try {
-      Telegram.WebApp.ready();
-      Telegram.WebApp.expand();
-    } catch (e) {}
-  }
-})();
-
 /* =============================================================
-   ПОЛУЧАЕМ ВСЕ DOM-ЭЛЕМЕНТЫ
+   ПОЛУЧАЕМ DOM-ЭЛЕМЕНТЫ
    ============================================================= */
 
-const galleryEl        = document.getElementById("gallery");
-const viewerWrapperEl  = document.getElementById("viewerWrapper");
-const viewerToolbarEl  = document.querySelector(".viewer-toolbar");
+const galleryEl     = document.getElementById("gallery");
+const threeCanvas   = document.getElementById("three-canvas");
 
-const backBtn      = document.getElementById("backBtn");
-const prevBtn      = document.getElementById("prevBtn");
-const nextBtn      = document.getElementById("nextBtn");
-const modelLabelEl = document.getElementById("modelLabel");
+const viewerTabsEl  = document.getElementById("viewer-tabs");
+const pane3dEl      = document.getElementById("viewer-3d-pane");
+const paneSchemeEl  = document.getElementById("viewer-scheme-pane");
+const paneVideoEl   = document.getElementById("viewer-video-pane");
 
-const tab3dBtn     = document.getElementById("tab3d");
-const tabSchemeBtn = document.getElementById("tabScheme");
-const tabVideoBtn  = document.getElementById("tabVideo");
+const schemeContainerEl  = document.getElementById("schemeContainer");
+const schemeImgWrapperEl = document.getElementById("schemeImgWrapper");
+const schemeImgEl        = document.getElementById("schemeImg");
+const schemeUiEl         = document.getElementById("schemeUi");
 
-const canvasEl        = document.getElementById("canvas");
-const schemeOverlayEl = document.getElementById("schemeOverlay");
-const schemeImgEl     = document.getElementById("schemeImage");
-const videoOverlayEl  = document.getElementById("videoOverlay");
-const videoEl         = document.getElementById("videoPlayer");
+const videoEl            = document.getElementById("videoPlayer");
+const videoPlayPauseBtn  = document.getElementById("videoPlayPauseBtn");
+const videoPlayPauseIcon = document.getElementById("videoPlayPauseIcon");
+const videoTimeLabel     = document.getElementById("videoTimeLabel");
+const videoBufferedLabel = document.getElementById("videoBufferedLabel");
+const videoProgressFill  = document.getElementById("videoProgressFill");
 
 const loadingEl      = document.getElementById("loading");
 const loadingTextEl  = document.getElementById("loadingText");
 const progressBarEl  = document.getElementById("progressBar");
 const statusEl       = document.getElementById("status");
 
-window.debugLog = document.getElementById("debugLog");
-
 /* =============================================================
-   ИНИЦИАЛИЗАЦИЯ VIEWER (главный модуль)
+   ИНИЦИАЛИЗАЦИЯ VIEWER (главный модуль экрана просмотра)
    ============================================================= */
 
 const viewer = initViewer({
-  galleryEl,
-  viewerWrapperEl,
-  viewerToolbarEl,
-  backBtn,
-  prevBtn,
-  nextBtn,
-  modelLabelEl,
+  // DOM
+  canvas: threeCanvas,
 
-  tab3dBtn,
-  tabSchemeBtn,
-  tabVideoBtn,
+  viewerTabsEl,
+  pane3dEl,
+  paneSchemeEl,
+  paneVideoEl,
 
-  canvasEl,
-
-  schemeOverlayEl,
+  schemeContainerEl,
+  schemeImgWrapperEl,
   schemeImgEl,
+  schemeUiEl,
 
-  videoOverlayEl,
   videoEl,
+  videoPlayPauseBtn,
+  videoPlayPauseIcon,
+  videoTimeLabel,
+  videoBufferedLabel,
+  videoProgressFill,
 
   loadingEl,
   loadingTextEl,
@@ -92,8 +84,10 @@ const viewer = initViewer({
    ИНИЦИАЛИЗАЦИЯ ГАЛЕРЕИ
    ============================================================= */
 
+// gallery.js рисует карточки моделей и вызывает onSelect(id),
+// когда пользователь выбирает модель.
 initGallery(galleryEl, {
   onSelect: viewer.openModelById
 });
 
-// Всё. Приложение запущено.
+// Приложение полностью инициализировано.
