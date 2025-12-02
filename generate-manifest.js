@@ -1,28 +1,36 @@
 // generate-manifest.js
-// Извлекает MODELS из models.js БЕЗ импорта three.js
-// Работает в GitHub Actions
+// Читает models.js, убирает импорты, выполняет код в песочнице
+// и получает MODELS без ошибок синтаксиса
 
 import fs from "fs";
+import vm from "vm";
 
-// Читаем models.js как простой текст
-const text = fs.readFileSync("./js/models.js", "utf8");
+// === 1. Читаем models.js как текст ===
+let text = fs.readFileSync("./js/models.js", "utf8");
 
-// Ищем массив MODELS (формат export const MODELS = [ ... ])
-const match = text.match(/export\s+const\s+MODELS\s*=\s*(\[[\s\S]*?\]);/);
+// === 2. Убираем импорты (three.js и всё остальное) ===
+text = text.replace(/import[\s\S]*?from\s+['"][^'"]+['"];/g, "");
 
-if (!match) {
+// === 3. Запускаем JS-код в песочнице ===
+const sandbox = {};
+vm.createContext(sandbox);
+
+try {
+  vm.runInContext(text, sandbox);
+} catch (err) {
+  console.error("❌ Ошибка выполнения MODELS в песочнице:", err);
+  process.exit(1);
+}
+
+// Теперь sandbox.MODELS содержит настоящий JS-объект
+const MODELS = sandbox.MODELS;
+
+if (!MODELS) {
   console.error("❌ MODELS не найден в models.js");
   process.exit(1);
 }
 
-// Это JS-массив, нужно превратить его в JSON
-let arrayText = match[1]
-  .replace(/(\w+)\s*:/g, '"$1":') // ключи → строки
-  .replace(/'([^']+)'/g, '"$1"'); // одинарные → двойные кавычки
-
-let MODELS = JSON.parse(arrayText);
-
-// Генерируем список файлов
+// === 4. Формируем список файлов ===
 const files = [];
 
 for (const m of MODELS) {
@@ -47,6 +55,7 @@ const manifest = {
   files: unique
 };
 
-fs.writeFileSync("manifest.json", JSON.stringify(manifest, null, 2), "utf8");
+// === 5. Записываем manifest.json ===
+fs.writeFileSync("manifest.json", JSON.stringify(manifest, null, 2));
 
-console.log("✔ manifest.json создан:", manifest.total, "файлов");
+console.log("✔ manifest.json успешно создан:", manifest.total, "файлов");
