@@ -9,6 +9,58 @@
 // 
 // Логика интерфейса, схем, видео и three.js полностью находится в отдельных модулях.
 //
+import { MODELS } from "./models.js";
+
+/* ============================================================
+   АВТОМАТИЧЕСКАЯ ГЕНЕРАЦИЯ manifest.json ДЛЯ SERVICE WORKER
+   Никаких ручных правок — всё работает само
+   ============================================================ */
+
+async function buildCacheManifest() {
+  try {
+    const files = [];
+
+    for (const model of MODELS) {
+      // GLTF
+      files.push(model.url);
+
+      // BIN-файл
+      const bin = model.url.replace(".gltf", ".bin");
+      files.push(bin);
+
+      // Текстуры
+      if (model.textures) {
+        for (const key of ["base", "normal", "rough"]) {
+          if (model.textures[key]) files.push(model.textures[key]);
+        }
+      }
+
+      // Схемы
+      if (model.schemes) files.push(...model.schemes);
+
+      // Видео
+      if (model.video) files.push(model.video);
+    }
+
+    const unique = [...new Set(files)];
+
+    // manifest.json → Cache Storage
+    const blob = new Blob([JSON.stringify({ files: unique })], {
+      type: "application/json",
+    });
+
+    const response = new Response(blob);
+    const cache = await caches.open("arch-models-manifest");
+    await cache.put("/manifest.json", response);
+
+    console.log("[App] Manifest.json создан:", unique);
+  } catch (e) {
+    console.error("[App] Ошибка генерации manifest:", e);
+  }
+}
+
+// Генерация manifest при старте
+buildCacheManifest();
 
 import { initGallery } from "./gallery.js";
 import { initViewer } from "./viewer.js";
