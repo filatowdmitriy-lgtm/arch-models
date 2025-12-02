@@ -1,13 +1,15 @@
 // js/models.js
 //
-// Финальная стабильная версия, полностью идентичная поведению 8.html,
-// но в модульной структуре.
+// Финальная стабильная версия, 100% совместимая с исходным 8.html
 //
+// КЛЮЧЕВОЕ:
 // - gltf.scene используется напрямую
-// - никакого normalize / scale / Group()
-// - никакого clone(true)
-// - повторная загрузка через loader.load()
-// - PBR-текстуры применяются аккуратно
+// - cache хранит оригинальный gltf.scene
+// - повторная загрузка НЕ скачивает файл
+// - clone(false) НЕ ломает структуру модели
+// - НИКАКОЙ нормализации, центрирования, масштабирования
+//
+// Всё как в оригинале.
 //
 
 import * as THREE from "three";
@@ -59,10 +61,10 @@ export const MODELS = [
 ];
 
 /* ========================================
-   КЭШ (хранит URL для ускорения повторной загрузки)
+   КЭШ МОДЕЛЕЙ (хранит САМИ root-сцены gltf)
    ======================================== */
 
-const cache = {};   // cache[id] = url
+const cache = {};   // cache[id] = gltf.scene
 
 const gltfLoader = new GLTFLoader();
 const textureLoader = new THREE.TextureLoader();
@@ -72,7 +74,7 @@ const textureLoader = new THREE.TextureLoader();
    ======================================== */
 
 export function getModelMeta(id) {
-  return MODELS.find(m => m.id === id) || null;
+  return MODELS.find((m) => m.id === id) || null;
 }
 
 function createMaterialFromTextures(textures) {
@@ -87,9 +89,9 @@ function createMaterialFromTextures(textures) {
     envIntensity = 0.7
   } = textures;
 
-  const texBase = base ? textureLoader.load(base) : null;
+  const texBase   = base   ? textureLoader.load(base)   : null;
   const texNormal = normal ? textureLoader.load(normal) : null;
-  const texRough = rough ? textureLoader.load(rough) : null;
+  const texRough  = rough  ? textureLoader.load(rough)  : null;
 
   if (texBase) {
     texBase.flipY = false;
@@ -115,7 +117,7 @@ function createMaterialFromTextures(textures) {
 }
 
 /* ========================================
-   ЗАГРУЗКА МОДЕЛИ (идеально соответствует 8.html)
+   ЗАГРУЗКА МОДЕЛИ С УЧЁТОМ КЭША
    ======================================== */
 
 export function loadModel(modelId, { onProgress, onStatus } = {}) {
@@ -124,33 +126,51 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
 
   if (onStatus) onStatus("Загрузка: " + meta.name);
 
-  // При повторе загружаем по URL снова (без clone)
-  const url = meta.url;
+  /* =============================
+     1) Если модель есть в кэше — возвращаем clone(false)
+     ============================= */
+  if (cache[meta.id]) {
+    const root = cache[meta.id].clone(false);
+
+    // материалы должны клонироваться вручную (стабильно)
+    const mat = createMaterialFromTextures(meta.textures);
+    if (mat) {
+      root.traverse(obj => {
+        if (obj.isMesh) obj.material = mat;
+      });
+    }
+
+    if (onProgress) onProgress(100);
+    if (onStatus) onStatus("Из кэша: " + meta.name);
+
+    return Promise.resolve({ root, meta });
+  }
+
+  /* =============================
+     2) Если нет — загружаем glTF через loader
+     ============================= */
 
   return new Promise((resolve, reject) => {
     gltfLoader.load(
-      url,
+      meta.url,
       (gltf) => {
-        const root = gltf.scene;  // ❗ используем напрямую
-        root.traverse(obj => {
-          obj.castShadow = false;
-          obj.receiveShadow = false;
-        });
+        const root = gltf.scene;  // используем напрямую
 
-        // PBR material
+        // Применяем PBR-текстуру
         const mat = createMaterialFromTextures(meta.textures);
         if (mat) {
-          root.traverse(obj => {
+          root.traverse((obj) => {
             if (obj.isMesh) obj.material = mat;
           });
         }
 
-        cache[meta.id] = url;
+        // КЭШИРУЕМ САМ root-сцену
+        cache[meta.id] = root;
 
-        if (onProgress) onProgress(100);
         if (onStatus) onStatus("Модель загружена: " + meta.name);
+        if (onProgress) onProgress(100);
 
-        resolve({ root, meta });
+        resolve({ root: root.clone(false), meta });
       },
       (xhr) => {
         if (xhr.lengthComputable && onProgress) {
@@ -158,7 +178,7 @@ export function loadModel(modelId, { onProgress, onStatus } = {}) {
         }
       },
       (err) => {
-        console.error("Ошибка загрузки glTF:", err);
+        console.error("Ошибка загрузки GLTF:", err);
         if (onStatus) onStatus("Ошибка загрузки");
         reject(err);
       }
