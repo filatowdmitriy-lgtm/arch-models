@@ -1,33 +1,35 @@
 // js/viewer.js
 //
-// Главный "дирижёр" логики интерфейса.
-// Связывает:
-//   • галерею
-//   • загрузку моделей
-//   • three.js рендер
-//   • схему (zoom/pan)
-//   • видео (blob player)
-// Также управляет вкладками, кнопками навигации,
-// лоадером, статусом и UI-поведенческими мелочами.
+// "Мозг" вьюера:
+// - переключает галерею / экран просмотра;
+// - управляет вкладками: 3D / Построение / Видео;
+// - загружает модели (через models.js);
+// - передаёт модели в threeViewer;
+// - настраивает схемы и видео;
+// - показывает / скрывает лоадер и статус;
+// - навигация: предыдущая / следующая модель.
 //
-// ЛОГИКА НЕ ИЗМЕНЕНА. Добавлены только комментарии.
+// НЕТ логики three.js (она в threeViewer.js).
+// НЕТ логики зума схем (она в scheme.js).
+// НЕТ логики blob-видео (она в video.js).
+//
+// Использование (из app.js):
+//
+//   import { initViewer } from "./viewer.js";
+//   import { initGallery } from "./gallery.js";
+//
+//   const viewer = initViewer({ ...DOM элементы... });
+//   initGallery(galleryEl, { onSelect: viewer.openModelById });
+//
 
-import { MODELS, getModelMeta, loadModel } from "./models.js";
-import {
-  initThree,
-  setModel as threeSetModel,
-  resize as threeResize,
-  resetCameraSoft
-} from "./threeViewer.js";
-
+import { MODELS, loadModel, getModelMeta } from "./models.js";
+import { initThree, setModel as threeSetModel, resize as threeResize } from "./threeViewer.js";
 import {
   initScheme,
   setSchemeImages,
   activateScheme,
-  deactivateScheme,
-  resetSchemeTransform
+  deactivateScheme
 } from "./scheme.js";
-
 import {
   initVideo,
   loadVideo,
@@ -35,46 +37,72 @@ import {
   deactivateVideo
 } from "./video.js";
 
-/* ============================================================
-   ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ВНУТРИ VIEWER
-   ============================================================ */
+/* ===============================
+   ВНУТРЕННЕЕ СОСТОЯНИЕ
+   =============================== */
 
 let dom = null;
 
-// id текущей модели
 let currentModelId = null;
+let activeView = "3d"; // "3d" | "scheme" | "video"
 
-// активная вкладка: "3d" | "scheme" | "video"
-let activeView = "3d";
+/* ===============================
+   ПУБЛИЧНЫЙ ИНТЕРФЕЙС
+   =============================== */
 
-/* ============================================================
-   ИНИЦИАЛИЗАЦИЯ VIEWER — главный вход из app.js
-   ============================================================ */
-
+/**
+ * Инициализация вьюера.
+ *
+ * @param {object} refs - ссылки на DOM-элементы
+ * @returns {object} API
+ */
 export function initViewer(refs) {
-  // refs — это объект со ссылками на все DOM-элементы.
+  // Ожидаемые элементы:
+  // galleryEl, viewerWrapperEl, viewerToolbarEl,
+  // backBtn, prevBtn, nextBtn,
+  // modelLabelEl,
+  // tab3dBtn, tabSchemeBtn, tabVideoBtn,
+  // canvasEl,
+  // schemeOverlayEl, schemeImgEl,
+  // videoOverlayEl, videoEl,
+  // loadingEl, loadingTextEl, progressBarEl,
+  // statusEl
   dom = { ...refs };
 
-  // Инициализация всех подсистем (3D, схемы, видео)
+  // Инициализируем 3D
   initThree(dom.canvasEl);
+
+  // Инициализируем схему (передаём колбэк для UI hide)
   initScheme({
     overlayEl: dom.schemeOverlayEl,
     imgEl: dom.schemeImgEl,
-    onUiVisibility: handleSchemeUiVisibility
+    onUiVisibility: (hidden) => {
+      // Схема просит скрыть/показать UI
+      // Скрываем тулбар и статус (как setUiHidden в 8.html)
+      if (activeView !== "scheme") {
+        // если не в режиме схемы — всегда показываем UI
+        setUiHidden(false);
+        return;
+      }
+      setUiHidden(hidden);
+    }
   });
+
+  // Инициализируем видео
   initVideo(dom.videoEl);
 
-  // Подключаем обработчики UI: вкладки, кнопки Prev/Next, кнопка "Галерея"
+  // Навешиваем обработчики UI
   setupUiHandlers();
 
-  // На window resize пересчитываем размеры 3D, принимаем такие же меры для схемы
+  // Глобальный touchmove-block, когда открыт viewer
+  setupGlobalTouchBlock();
+
+  // Ресайз окна → три-вьюер + reset схемы при необходимости
   window.addEventListener("resize", handleResize);
 
-  // В начале — показывается галерея, viewer скрыт
-  dom.viewerWrapperEl.classList.remove("visible");
-  dom.galleryEl.classList.remove("hidden");
+  // Стартовое состояние: галерея показана, вьюер скрыт
+  showGallery();
 
-  // Возвращаем наружу API
   return {
     openModelById,
     showGallery,
@@ -82,289 +110,310 @@ export function initViewer(refs) {
   };
 }
 
-/* ============================================================
-   ОТКРЫТИЕ МОДЕЛИ ЧЕРЕЗ id (вызывается галереей или switchModel)
-   ============================================================ */
+/* ===============================
+   ОБРАБОТКА RESIZE
+   =============================== */
 
-function openModelById(id) {
-  const meta = getModelMeta(id);
+function handleResize() {
+  // Три-вьюер: обновить aspect и размер
+  threeResize();
+
+  // Схемы: при активной вкладке — пересчитать fit-to-screen (как в 8.html)
+  if (activeView === "scheme") {
+    // повторная активация схемы → resetTransform()
+    activateScheme();
+  }
+}
+
+/* ===============================
+   ОБРАБОТЧИКИ КНОПОК И ВКЛАДОК
+   =============================== */
+
+function setupUiHandlers() {
+  const {
+    backBtn,
+    prevBtn,
+    nextBtn,
+    tab3dBtn,
+    tabSchemeBtn,
+    tabVideoBtn
+  } = dom;
+
+  // Кнопка "Назад к галерее"
+  backBtn.addEventListener("click", () => {
+    showGallery();
+  });
+
+  // Следующая/предыдущая модель
+  nextBtn.addEventListener("click", () => {
+    if (!currentModelId) {
+      // если ничего не выбрано — открываем первую
+      openModelById(MODELS[0].id);
+      return;
+    }
+    let idx = getModelIndex(currentModelId);
+    idx = (idx + 1) % MODELS.length;
+    openModelById(MODELS[idx].id);
+  });
+
+  prevBtn.addEventListener("click", () => {
+    if (!currentModelId) {
+      openModelById(MODELS[0].id);
+      return;
+    }
+    let idx = getModelIndex(currentModelId);
+    idx = (idx - 1 + MODELS.length) % MODELS.length;
+    openModelById(MODELS[idx].id);
+  });
+
+  // Вкладки
+  tab3dBtn.addEventListener("click", () => {
+    setViewMode("3d");
+  });
+
+  tabSchemeBtn.addEventListener("click", () => {
+    const meta = getCurrentModelMeta();
+    if (!meta || !meta.schemes || meta.schemes.length === 0) return;
+    setViewMode("scheme");
+  });
+
+  tabVideoBtn.addEventListener("click", () => {
+    const meta = getCurrentModelMeta();
+    if (!meta || !meta.video) return;
+    setViewMode("video");
+  });
+}
+
+/* ===============================
+   ГЛОБАЛЬНЫЙ BLOCK touchmove (как в 8.html)
+   =============================== */
+
+function setupGlobalTouchBlock() {
+  const { viewerWrapperEl } = dom;
+
+  document.addEventListener(
+    "touchmove",
+    (e) => {
+      if (viewerWrapperEl && viewerWrapperEl.classList.contains("visible")) {
+        e.preventDefault();
+      }
+    },
+    { passive: false }
+  );
+}
+
+/* ===============================
+   НАВИГАЦИЯ ПО МОДЕЛЯМ
+   =============================== */
+
+function getModelIndex(id) {
+  return MODELS.findIndex((m) => m.id === id);
+}
+
+function getCurrentModelMeta() {
+  if (!currentModelId) return null;
+  return getModelMeta(currentModelId);
+}
+
+/**
+ * Открыть модель по её id.
+ * Вызывается галереей через viewer.openModelById.
+ */
+function openModelById(modelId) {
+  const meta = getModelMeta(modelId);
   if (!meta) return;
 
-  currentModelId = id;
+  currentModelId = modelId;
 
-  // Переключаем экраны: галерею скрываем, viewer показываем
-  dom.galleryEl.classList.add("hidden");
-  dom.viewerWrapperEl.classList.add("visible");
+  // Обновляем подпись
+  dom.modelLabelEl.textContent = meta.name;
 
-  // Обновляем заголовок модели
-  dom.modelLabelEl.textContent = meta.name || "";
+  // Показываем вьюер, скрываем галерею
+  hideGallery();
+  showViewer();
 
-  // Блокируем/разблокируем вкладки "Схема" и "Видео" в зависимости от доступности
+  // Настраиваем вкладки под конкретную модель
   configureViewTabsForModel(meta);
 
-  // Запускаем загрузку 3D модели
-  loadSelectedModel(meta);
+  // Загружаем 3D модель
+  startModelLoading(meta);
 }
 
-/* ============================================================
-   НАСТРОЙКА ВКЛАДОК В ЗАВИСИМОСТИ ОТ МОДЕЛИ
-   ============================================================ */
+/* ===============================
+   ЗАГРУЗКА МОДЕЛИ
+   =============================== */
 
-function configureViewTabsForModel(meta) {
-  // Вкладка "Схема"
-  if (meta.schemes && meta.schemes.length > 0) {
-    dom.tabSchemeBtn.classList.remove("disabled");
-  } else {
-    dom.tabSchemeBtn.classList.add("disabled");
-  }
-
-  // Вкладка "Видео"
-  if (meta.video) {
-    dom.tabVideoBtn.classList.remove("disabled");
-  } else {
-    dom.tabVideoBtn.classList.add("disabled");
-  }
-}
-
-/* ============================================================
-   ГЛАВНАЯ ФУНКЦИЯ ЗАГРУЗКИ МОДЕЛИ
-   ============================================================ */
-
-function loadSelectedModel(meta) {
+function startModelLoading(meta) {
   showLoading("Загрузка…", 0);
   setStatus("Загрузка: " + meta.name);
 
-  // Асинхронная загрузка модели
   loadModel(meta.id, {
     onProgress: (percent) => {
-      // Обновляем полоску прогресса
-      showLoading("Загрузка: " + percent.toFixed(0) + "%", percent);
+      if (typeof percent === "number") {
+        showLoading("Загрузка: " + percent.toFixed(0) + "%", percent);
+      } else {
+        showLoading("Загрузка…", null);
+      }
     },
     onStatus: (text) => {
       setStatus(text);
     }
   })
     .then(({ root }) => {
-      // Передаём трёхмерную модель в three.js
+      // Передаём модель в threeViewer
       threeSetModel(root);
 
       hideLoading();
+      // Дополнительно дублируем явный статус, как в 8.html
       setStatus("Модель загружена: " + meta.name);
 
-      // По умолчанию — включаем 3D-вкладку
+      // При загрузке всегда переходим в 3D режим
       setViewMode("3d");
     })
     .catch((err) => {
       console.error("Ошибка загрузки модели:", err);
       hideLoading();
       setStatus("Ошибка загрузки модели");
+      alert("Ошибка загрузки модели.");
     });
-
-  // Параллельно (НЕ ждём) подготавливаем схемы и видео
-  setupSchemeAndVideo(meta);
 }
 
-/* ============================================================
-   ЗАПОЛНЕНИЕ СХЕМ & ВИДЕО ДЛЯ ЭТОЙ МОДЕЛИ
-   ============================================================ */
+/* ===============================
+   НАСТРОЙКА ВКЛАДОК ПОД МОДЕЛЬ
+   =============================== */
 
-function setupSchemeAndVideo(meta) {
-  // Схемы
-  if (meta.schemes && meta.schemes.length > 0) {
+function configureViewTabsForModel(meta) {
+  const { tabSchemeBtn, tabVideoBtn } = dom;
+
+  const hasScheme = meta.schemes && meta.schemes.length > 0;
+  const hasVideo = !!meta.video;
+
+  // ----- СХЕМЫ -----
+  if (hasScheme) {
+    tabSchemeBtn.classList.remove("disabled");
     setSchemeImages(meta.schemes);
   } else {
+    tabSchemeBtn.classList.add("disabled");
     setSchemeImages([]);
   }
 
-  // Видео
-  if (meta.video) {
-    loadVideo(meta.video);
+  // ----- ВИДЕО -----
+  if (hasVideo) {
+    tabVideoBtn.classList.remove("disabled");
+    loadVideo(meta.video); // blob-загрузка видео
   } else {
-    deactivateVideo();
+    tabVideoBtn.classList.add("disabled");
+    loadVideo(null); // сбрасываем видео
   }
+
+  // По умолчанию всегда стартуем с 3D
+  setViewMode("3d");
 }
 
-/* ============================================================
-   ПОВЕДЕНИЕ UI ПРИ ЗУМЕ СХЕМЫ (auto-hide toolbar/status)
-   ============================================================ */
-
-function handleSchemeUiVisibility(hidden) {
-  // Схема сама говорит: "спрячь UI" или "покажи UI"
-  // Но только если мы на вкладке "scheme"
-  if (activeView !== "scheme") return;
-  setUiHidden(hidden);
-}
-
-/* ============================================================
-   ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК
-   ============================================================ */
-
-function setupUiHandlers() {
-  // Кнопка "Галерея"
-  dom.backBtn.addEventListener("click", showGallery);
-
-  // Переключение между вкладками
-  dom.tab3dBtn.addEventListener("click", () => setViewMode("3d"));
-  dom.tabSchemeBtn.addEventListener("click", () => setViewMode("scheme"));
-  dom.tabVideoBtn.addEventListener("click", () => setViewMode("video"));
-
-  // Prev / Next (смена модели)
-  dom.prevBtn.addEventListener("click", () => switchModel(-1));
-  dom.nextBtn.addEventListener("click", () => switchModel(1));
-}
-
-/* ============================================================
-   ЛОГИКА ПЕРЕКЛЮЧЕНИЯ ВИДА: 3D / SCHEME / VIDEO
-   ============================================================ */
+/* ===============================
+   ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК / РЕЖИМОВ
+   =============================== */
 
 function setViewMode(mode) {
-  if (activeView === mode) return;
   activeView = mode;
 
   const {
-    tab3dBtn, tabSchemeBtn, tabVideoBtn,
-    canvasEl, schemeOverlayEl, videoOverlayEl
+    tab3dBtn,
+    tabSchemeBtn,
+    tabVideoBtn,
+    schemeOverlayEl,
+    videoOverlayEl
   } = dom;
 
-  // Сбрасываем активные классы на всех вкладках
-  tab3dBtn.classList.remove("active");
-  tabSchemeBtn.classList.remove("active");
-  tabVideoBtn.classList.remove("active");
+  // Подсветка вкладок
+  tab3dBtn.classList.toggle("active", mode === "3d");
+  tabSchemeBtn.classList.toggle("active", mode === "scheme");
+  tabVideoBtn.classList.toggle("active", mode === "video");
 
-  switch (mode) {
-    case "3d":
-      tab3dBtn.classList.add("active");
-
-      // Показываем 3D
-      canvasEl.style.display = "block";
-      deactivateScheme();
-      deactivateVideo();
-      schemeOverlayEl.style.display = "none";
-      videoOverlayEl.style.display = "none";
-
-      setUiHidden(false);
-
-      // Мягкая коррекция камеры
-      resetCameraSoft();
-      break;
-
-    case "scheme":
-      tabSchemeBtn.click();
-      tabSchemeBtn.classList.add("active");
-
-      canvasEl.style.display = "none";
-      deactivateVideo();
-
-      schemeOverlayEl.style.display = "flex";
-      videoOverlayEl.style.display = "none";
-
-      // Вход в режим схемы = fit-to-screen
-      resetSchemeTransform();
-
-      setUiHidden(false);
+  // ----- СХЕМА -----
+  if (schemeOverlayEl) {
+    const isScheme = mode === "scheme";
+    schemeOverlayEl.style.display = isScheme ? "flex" : "none";
+    if (isScheme) {
       activateScheme();
-      break;
-
-    case "video":
-      tabVideoBtn.classList.add("active");
-
-      canvasEl.style.display = "none";
+    } else {
       deactivateScheme();
+    }
+  }
 
-      schemeOverlayEl.style.display = "none";
-      videoOverlayEl.style.display = "flex";
+  // ----- ВИДЕО -----
+  if (videoOverlayEl) {
+    const isVideo = mode === "video";
+    videoOverlayEl.style.display = isVideo ? "flex" : "none";
 
-      setUiHidden(false);
+    if (isVideo) {
       activateVideo();
-      break;
+    } else {
+      deactivateVideo(); // внутри — pause(), как в 8.html
+    }
+  }
+
+  // При выходе из "Построения" всегда показываем UI
+  if (mode !== "scheme") {
+    setUiHidden(false);
   }
 }
 
-/* ============================================================
-   СКРЫТИЕ И ПОКАЗ ГАЛЕРЕИ
-   ============================================================ */
+/* ===============================
+   ПОКАЗ / СКРЫТИЕ ГАЛЕРЕИ / VIEWER
+   =============================== */
 
 function showGallery() {
-  // При выходе — выключаем видео
-  deactivateVideo();
-
-  // Переключаем на галерею
-  dom.viewerWrapperEl.classList.remove("visible");
-  dom.galleryEl.classList.remove("hidden");
-
-  currentModelId = null;
-  activeView = "3d";
-
-  // Возвращаем UI и камеру в норму
-  setUiHidden(false);
-  resetCameraSoft();
-  resetSchemeTransform();
+  const { galleryEl, viewerWrapperEl } = dom;
+  if (galleryEl) galleryEl.classList.remove("hidden");
+  if (viewerWrapperEl) viewerWrapperEl.classList.remove("visible");
 
   setStatus("");
 }
 
-/* ============================================================
-   ПЕРЕКЛЮЧЕНИЕ МОДЕЛИ PREV/NEXT
-   ============================================================ */
-
-function switchModel(direction) {
-  if (!currentModelId) {
-    if (MODELS.length > 0) openModelById(MODELS[0].id);
-    return;
-  }
-
-  const idx = MODELS.findIndex((m) => m.id === currentModelId);
-  if (idx === -1) {
-    if (MODELS.length > 0) openModelById(MODELS[0].id);
-    return;
-  }
-
-  let nextIndex = idx + direction;
-  if (nextIndex < 0) nextIndex = MODELS.length - 1;
-  if (nextIndex >= MODELS.length) nextIndex = 0;
-
-  openModelById(MODELS[nextIndex].id);
+function hideGallery() {
+  const { galleryEl } = dom;
+  if (galleryEl) galleryEl.classList.add("hidden");
 }
 
-/* ============================================================
-   ЛОАДЕР И СТАТУС
-   ============================================================ */
+function showViewer() {
+  const { viewerWrapperEl } = dom;
+  if (viewerWrapperEl) viewerWrapperEl.classList.add("visible");
+}
+
+/* ===============================
+   LOADING UI
+   =============================== */
 
 function showLoading(text, percent) {
-  dom.loadingEl.style.display = "flex";
-  dom.loadingTextEl.textContent = text;
+  const { loadingEl, loadingTextEl, progressBarEl } = dom;
+  if (!loadingEl || !loadingTextEl || !progressBarEl) return;
+
+  loadingEl.style.display = "flex";
+  loadingTextEl.textContent = text;
 
   if (typeof percent === "number") {
-    const clamped = Math.max(0, Math.min(100, percent));
-    dom.progressBarEl.style.width = clamped + "%";
+    progressBarEl.style.width = percent.toFixed(0) + "%";
   } else {
-    dom.progressBarEl.style.width = "0%";
+    progressBarEl.style.width = "15%";
   }
 }
 
 function hideLoading() {
-  dom.loadingEl.style.display = "none";
-  dom.progressBarEl.style.width = "0%";
+  const { loadingEl } = dom;
+  if (!loadingEl) return;
+  loadingEl.style.display = "none";
 }
 
 function setStatus(text) {
-  dom.statusEl.textContent = text || "";
+  const { statusEl } = dom;
+  if (!statusEl) return;
+  statusEl.textContent = text || "";
 }
 
-/* ============================================================
-   RESIZE — пересчёт размеров 3D и схемы
-   ============================================================ */
-
-function handleResize() {
-  threeResize();
-  if (activeView === "scheme") {
-    activateScheme(); // схема пересчитывает центрирование
-  }
-}
-
-/* ============================================================
-   СКРЫТИЕ/ПОКАЗ UI (тулбар + статус)
-   ============================================================ */
+/* ===============================
+   UI HIDE/SHOW (toolbar + status)
+   =============================== */
 
 function setUiHidden(hidden) {
   const { viewerToolbarEl, statusEl } = dom;
