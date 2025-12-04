@@ -88,6 +88,7 @@ renderer.setAnimationLoop(() => {
 
         // === DETECT SCREEN CAPTURE ===
     if (detectScreenCapture()) {
+        document.getElementById("debug-log").textContent = "SCREEN CAPTURE DETECTED";
         activatePrivacyMode();   // включает privacy-флаг глобально
     }
 
