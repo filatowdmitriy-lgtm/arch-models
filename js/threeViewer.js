@@ -2,12 +2,30 @@
 // Камера и управление — 100% поведение 8.html.
 
 import * as THREE from "three";
+import { onPrivacyShow, onPrivacyHide, isPrivacyEnabled } from "./privacyMode.js";
 
 let scene = null;
 let camera = null;
 let renderer = null;
 
 let currentModel = null;
+
+// privacy flag для 3D
+let privacy = false;
+
+// Слушаем включение/выключение приватности
+onPrivacyShow(() => {
+    privacy = true;
+});
+
+onPrivacyHide(() => {
+    privacy = false;
+});
+
+// Если privacy уже активен к моменту инициализации
+if (isPrivacyEnabled()) {
+    privacy = true;
+}
 
 const state = {
   radius: 4.5,
@@ -46,13 +64,24 @@ export function initThree(canvas) {
   setupLights();
   initControls(canvas);
 
-  renderer.setAnimationLoop(() => {
-    state.rotX += (state.targetRotX - state.rotX) * 0.22;
-    state.rotY += (state.targetRotY - state.rotY) * 0.22;
+renderer.setAnimationLoop(() => {
+  // Анимация вращения камеры
+  state.rotX += (state.targetRotX - state.rotX) * 0.22;
+  state.rotY += (state.targetRotY - state.rotY) * 0.22;
 
-    updateCameraPosition();
-    renderer.render(scene, camera);
-  });
+  updateCameraPosition();
+
+  // === PRIVACY MODE: рендер чёрного кадра ===
+  if (privacy) {
+    renderer.setClearColor(0x000000, 1.0); // полностью чёрный
+    renderer.clear(true, true, true);
+    return; // НЕ рендерим сцену вообще
+  }
+
+  // === NORMAL MODE ===
+  renderer.setClearColor(0x050506, 1.0); // твой исходный фон
+  renderer.render(scene, camera);
+});
 }
 
 export function setModel(root) {
