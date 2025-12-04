@@ -24,19 +24,20 @@ export function onPrivacyHide(cb) {
   }
 }
 
-function activatePrivacyMode() {
+export function activatePrivacyMode() {
   if (!enabled) {
     enabled = true;
     callbacks.onShow.forEach((cb) => cb());
   }
 }
 
-function deactivatePrivacyMode() {
+export function deactivatePrivacyMode() {
   if (enabled) {
     enabled = false;
     callbacks.onHide.forEach((cb) => cb());
   }
 }
+
 
 export function isPrivacyEnabled() {
   return enabled;
