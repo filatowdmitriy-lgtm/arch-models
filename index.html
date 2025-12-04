@@ -394,6 +394,29 @@
       opacity: 0.9;
       transition: opacity 0.25s ease, transform 0.25s ease;
     }
+
+    /* ============================
+   ANTI SCREENSHOT OVERLAY (ASO)
+   ============================ */
+
+.aso-mask {
+    position: absolute;
+    inset: 0;
+    background: black;
+
+    /* Ключ: screenshot/record видит маску как чёрный слой */
+    mix-blend-mode: screen;
+
+    /* Пользователь маску НЕ видит */
+    opacity: 1;
+
+    /* Жесты и клики проходят насквозь */
+    pointer-events: none;
+
+    /* Маска поверх canvas, но под UI */
+    z-index: 19;
+}
+
   </style>
 
   <!-- ============================
@@ -446,6 +469,9 @@
 
       <div class="viewer-main">
         <canvas id="canvas"></canvas>
+
+<div id="aso-mask" class="aso-mask"></div>
+
 
         <!-- СХЕМА -->
         <div class="alt-overlay" id="schemeOverlay">
