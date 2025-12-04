@@ -78,6 +78,18 @@ const gl = renderer.getContext();   // ← NEW: получаем WebGL конт�
     }
 }
 
+let lastFrameTime = performance.now();
+
+function detectIOSFreeze() {
+    const now = performance.now();
+    const delta = now - lastFrameTime;
+
+    // На iOS freeze при скрине обычно 12–40 мс
+    const freeze = delta > 12 && delta < 80;
+
+    lastFrameTime = now;
+    return freeze;
+}
 
 renderer.setAnimationLoop(() => {
   // Анимация вращения камеры
@@ -85,6 +97,13 @@ renderer.setAnimationLoop(() => {
   state.rotY += (state.targetRotY - state.rotY) * 0.22;
 
   updateCameraPosition();
+    
+    // === DETECT iOS SCREEN CAPTURE FREEZE ===
+if (detectIOSFreeze()) {
+    document.getElementById("debug-log").textContent = "iOS FREEZE DETECTED";
+    activatePrivacyMode();
+}
+
 
         // === DETECT SCREEN CAPTURE ===
     if (detectScreenCapture()) {
