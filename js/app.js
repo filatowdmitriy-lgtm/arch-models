@@ -11,6 +11,7 @@
 
 import { initGallery } from "./gallery.js";
 import { initViewer } from "./viewer.js";
+import { initPrivacyDetection } from "./privacyMode.js"; // NEW
 
 /* ============================================================
    1. Telegram Mini App готовность и expand()
@@ -63,6 +64,9 @@ const progressBarEl = document.getElementById("progressBar");
 
 // Статус
 const statusEl = document.getElementById("status");
+
+// 2. Инициализация privacy-детектора
+initPrivacyDetection(canvasEl);
 
 // debugLog удалён — поддержка сохранена, но сам элемент отсутствует
 window.debugLog = { textContent: "" };
