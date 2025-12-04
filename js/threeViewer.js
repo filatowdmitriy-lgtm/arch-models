@@ -85,7 +85,7 @@ function detectIOSFreeze() {
     const delta = now - lastFrameTime;
 
     // На iOS freeze при скрине обычно 12–40 мс
-    const freeze = delta > 12 && delta < 80;
+    const freeze = delta > 40 && delta < 200;
 
     lastFrameTime = now;
     return freeze;
