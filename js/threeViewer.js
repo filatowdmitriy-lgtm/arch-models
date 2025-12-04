@@ -2,7 +2,7 @@
 // Камера и управление — 100% поведение 8.html.
 
 import * as THREE from "three";
-import { onPrivacyShow, onPrivacyHide, isPrivacyEnabled } from "./privacyMode.js";
+import { onPrivacyShow, onPrivacyHide, isPrivacyEnabled, activatePrivacyMode, deactivatePrivacyMode } from "./privacyMode.js";
 
 let scene = null;
 let camera = null;
@@ -51,11 +51,13 @@ export function initThree(canvas) {
 
   updateCameraPosition();
 
-  renderer = new THREE.WebGLRenderer({
+renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: true,
     alpha: false
-  });
+});
+
+const gl = renderer.getContext();   // ← NEW: получаем WebGL контекст
 
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -64,12 +66,31 @@ export function initThree(canvas) {
   setupLights();
   initControls(canvas);
 
+ function detectScreenCapture() {
+    if (!gl) return false;
+
+    try {
+        const buf = new Uint8Array(4);
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+        return false; // Всё нормально
+    } catch (e) {
+        return true; // WebKit заблокировал чтение → screen capture
+    }
+}
+
+
 renderer.setAnimationLoop(() => {
   // Анимация вращения камеры
   state.rotX += (state.targetRotX - state.rotX) * 0.22;
   state.rotY += (state.targetRotY - state.rotY) * 0.22;
 
   updateCameraPosition();
+
+        // === DETECT SCREEN CAPTURE ===
+    if (detectScreenCapture()) {
+        activatePrivacyMode();   // включает privacy-флаг глобально
+    }
+
 
   // === PRIVACY MODE: рендер чёрного кадра ===
   if (privacy) {
