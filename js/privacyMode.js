@@ -27,7 +27,7 @@ export function onPrivacyHide(cb) {
 export function activatePrivacyMode() {
   if (!enabled) {
     enabled = true;
-    console.log("PRIVACY MODE ACTIVATED"); // TEMP TEST
+    document.getElementById("debug-log").textContent = "PRIVACY MODE ACTIVATED"; // TEMP TEST
     callbacks.onShow.forEach((cb) => cb());
   }
 }
@@ -35,7 +35,7 @@ export function activatePrivacyMode() {
 export function deactivatePrivacyMode() {
   if (enabled) {
     enabled = false;
-    console.log("PRIVACY MODE DEACTIVATED"); // TEMP TEST
+    document.getElementById("debug-log").textContent = "PRIVACY MODE DEACTIVATED"; // TEMP TEST
     callbacks.onHide.forEach((cb) => cb());
   }
 }
