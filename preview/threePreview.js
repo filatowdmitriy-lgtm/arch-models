@@ -1,13 +1,22 @@
 import * as THREE from "three";
 
-let state = {
+// 1:1 с твоим threeViewer.js
+const state = {
   radius: 4.5,
+  minRadius: 2.0,
+  maxRadius: 12.0,
+
   rotX: 0.10,
-  rotY: 0.00
+  rotY: 0.00,
+  targetRotX: 0.10,
+  targetRotY: 0.00
 };
 
 export function initPreviewThree(container, size) {
   const scene = new THREE.Scene();
+
+  // ВАЖНО: не задаём scene.background, чтобы PNG был с alpha
+  // (в твоём основном threeViewer background = #050506) :contentReference[oaicite:4]{index=4}
 
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 50);
 
@@ -17,34 +26,88 @@ export function initPreviewThree(container, size) {
     preserveDrawingBuffer: true
   });
 
-  renderer.setSize(size, size, false);
   renderer.setPixelRatio(1);
   renderer.setClearColor(0x000000, 0);
 
+  container.innerHTML = "";
   container.appendChild(renderer.domElement);
+
+  renderer.setSize(size, size, false);
 
   setupLights(scene);
 
-  return { scene, camera, renderer };
+  // init camera
+  updateCameraPosition(camera);
+
+  return {
+    scene,
+    camera,
+    renderer,
+    currentModel: null,
+    size
+  };
 }
 
-export function setPreviewModel(scene, camera, root) {
+export function resizePreview(three, container, size) {
+  three.size = size;
+
+  container.style.width = size + "px";
+  container.style.height = size + "px";
+
+  three.renderer.setSize(size, size, false);
+
+  // aspect квадратный
+  three.camera.aspect = 1;
+  three.camera.updateProjectionMatrix();
+}
+
+export function setPreviewModel(three, root) {
+  const { scene } = three;
+
+  // НЕ удаляем lights. Удаляем только модель.
+  if (three.currentModel) {
+    scene.remove(three.currentModel);
+  }
+
+  three.currentModel = root;
   scene.add(root);
 
-  // --- 1 в 1 fitCameraToModel ---
+  // сброс вращения как в setModel() в твоём файле :contentReference[oaicite:5]{index=5}
+  state.targetRotX = 0.10;
+  state.targetRotY = 0.00;
+  state.rotX = 0.10;
+  state.rotY = 0.00;
+
+  fitCameraToModel(three.camera, root);
+  updateCameraPosition(three.camera);
+
+  // один гарантированный кадр
+  three.renderer.render(three.scene, three.camera);
+}
+
+export function renderPNG(three) {
+  three.renderer.render(three.scene, three.camera);
+  return three.renderer.domElement.toDataURL("image/png");
+}
+
+// --- 1:1 с твоим threeViewer.js ---
+function fitCameraToModel(camera, root) {
   const box = new THREE.Box3().setFromObject(root);
   const sphere = box.getBoundingSphere(new THREE.Sphere());
   const radius = sphere.radius || 1;
 
   const fovRad = camera.fov * Math.PI / 180;
-  const dist = radius / Math.sin(fovRad / 2);
+  let dist = radius / Math.sin(fovRad / 2);
+
+  const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (isMobile) dist *= 1.55;
 
   state.radius = dist;
-
-  updateCamera(camera);
+  state.minRadius = dist * 0.4;
+  state.maxRadius = dist * 6.0;
 }
 
-function updateCamera(camera) {
+function updateCameraPosition(camera) {
   const r = state.radius;
 
   const x = r * Math.sin(state.rotY) * Math.cos(state.rotX);
@@ -55,13 +118,8 @@ function updateCamera(camera) {
   camera.lookAt(0, 0, 0);
 }
 
-export function renderPNG(renderer, scene, camera) {
-  renderer.render(scene, camera);
-  return renderer.domElement.toDataURL("image/png");
-}
-
-// --- lighting copied 1:1 ---
 function setupLights(scene) {
+  // 1:1 копия твоего освещения :contentReference[oaicite:6]{index=6}
   const zenith = new THREE.DirectionalLight(0xf5f8ff, 0.0);
   zenith.position.set(0, 11, 2);
   scene.add(zenith);
