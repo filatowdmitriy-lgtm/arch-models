@@ -26,7 +26,7 @@ export function initPreviewThree(container, size) {
     preserveDrawingBuffer: true
   });
 
-  renderer.setPixelRatio(1);
+  renderer.setPixelRatio(window.devicePixelRatio);
   renderer.setClearColor(0x000000, 0);
 
   container.innerHTML = "";
