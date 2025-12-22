@@ -123,8 +123,8 @@ export const MODELS = [
     video: `${BASE}textures/ionic/test_video.mp4`,
     textures: {
       base: `${BASE}textures/kapitel1/BaseColor.jpg`,
-      normal: `${BASE}textures/kapitel1Normal.jpg`,
-      rough: `${BASE}textures/kapitel1Roughness.jpg`,
+      normal: `${BASE}textures/kapitel1/Normal.jpg`,
+      rough: `${BASE}textures/kapitel1/Roughness.jpg`,
       metalness: 0,
       roughness: 1,
       envIntensity: 0.75
