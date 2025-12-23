@@ -157,29 +157,29 @@ export const MODELS = [
   url: `${BASE}models/molbert.gltf`,
   preview: `${BASE}textures/molbert/preview.png`,
 
-  materials: {
-    molbert2_1: {
-      base: `${BASE}textures/molbert/molbert2_1_BaseColor.jpg`,
-      normal: `${BASE}textures/molbert/molbert2_1_Normal.jpg`,
-      rough: `${BASE}textures/molbert/molbert2_1_Roughness.jpg`
-    },
-    molbert2_2: {
-      base: `${BASE}textures/molbert/molbert2_2_BaseColor.jpg`,
-      normal: `${BASE}textures/molbert/molbert2_2_Normal.jpg`,
-      rough: `${BASE}textures/molbert/molbert2_2_Roughness.jpg`
-    },
-    molbert2_3: {
-      base: `${BASE}textures/molbert/molbert2_3_BaseColor.jpg`,
-      normal: `${BASE}textures/molbert/molbert2_3_Normal.jpg`,
-      rough: `${BASE}textures/molbert/molbert2_3_Roughness.jpg`
-    },
-    molbert2_4: {
-      base: `${BASE}textures/molbert/molbert2_4_BaseColor.jpg`,
-      normal: `${BASE}textures/molbert/molbert2_4_Normal.jpg`,
-      rough: `${BASE}textures/molbert/molbert2_4_Roughness.jpg`,
-      metal: `${BASE}textures/molbert/molbert2_4_Metallic.jpg`
-     }
-   }
+materials: {
+  "1": {
+    base: `${BASE}textures/molbert/molbert2_1_BaseColor.jpg`,
+    normal: `${BASE}textures/molbert/molbert2_1_Normal.jpg`,
+    rough: `${BASE}textures/molbert/molbert2_1_Roughness.jpg`
+  },
+  "2": {
+    base: `${BASE}textures/molbert/molbert2_2_BaseColor.jpg`,
+    normal: `${BASE}textures/molbert/molbert2_2_Normal.jpg`,
+    rough: `${BASE}textures/molbert/molbert2_2_Roughness.jpg`
+  },
+  "3": {
+    base: `${BASE}textures/molbert/molbert2_3_BaseColor.jpg`,
+    normal: `${BASE}textures/molbert/molbert2_3_Normal.jpg`,
+    rough: `${BASE}textures/molbert/molbert2_3_Roughness.jpg`
+  },
+  "4": {
+    base: `${BASE}textures/molbert/molbert2_4_BaseColor.jpg`,
+    normal: `${BASE}textures/molbert/molbert2_4_Normal.jpg`,
+    rough: `${BASE}textures/molbert/molbert2_4_Roughness.jpg`,
+    metal: `${BASE}textures/molbert/molbert2_4_Metallic.jpg`
+  }
+}
  }
 ];
 
