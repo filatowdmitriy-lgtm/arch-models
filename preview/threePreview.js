@@ -114,12 +114,12 @@ function updateCameraPosition(camera) {
   const fov = THREE.MathUtils.degToRad(camera.fov);
 
   // дистанция, чтобы модель ЦЕЛИКОМ влезла в кадр
-  const dist = (r / Math.sin(fov / 2)) * 1.15; // 1.15 = небольшой запас
+  const dist = (r / Math.sin(fov / 2)) * 0.9; // 1.15 = небольшой запас
 
   // каталожный ракурс ~45°
   camera.position.set(
     -dist * 0.7,  // слева
-     dist * 0.35, // пониже
+    -dist * 0.35, // пониже
      dist * 0.7   // вперед
   );
 
