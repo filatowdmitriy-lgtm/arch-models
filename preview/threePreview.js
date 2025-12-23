@@ -18,7 +18,7 @@ export function initPreviewThree(container, size) {
   // ВАЖНО: не задаём scene.background, чтобы PNG был с alpha
   // (в твоём основном threeViewer background = #050506) :contentReference[oaicite:4]{index=4}
 
-  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 50);
+  const camera = new THREE.PerspectiveCamera(25, 1, 0.1, 50);
 
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
@@ -110,12 +110,19 @@ function fitCameraToModel(camera, root) {
 function updateCameraPosition(camera) {
   const r = state.radius;
 
-  const x = r * Math.sin(state.rotY) * Math.cos(state.rotX);
-  const z = r * Math.cos(state.rotY) * Math.cos(state.rotX);
-  const y = r * Math.sin(state.rotX);
+function updateCameraPosition(camera) {
+  const r = state.radius;
 
-  camera.position.set(x, y, z);
-  camera.lookAt(0, 0, 0);
+  // Каталожный ракурс:
+  // слева ~45°, камера пониже, лёгкая перспектива
+  camera.position.set(
+    -r * 0.85,  // слева
+     r * 0.35,  // пониже
+     r * 1.15   // расстояние
+  );
+
+  camera.lookAt(0, r * 0.35, 0);
+}
 }
 
 function setupLights(scene) {
