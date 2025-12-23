@@ -6,10 +6,12 @@ const state = {
   minRadius: 2.0,
   maxRadius: 12.0,
 
-  rotX: 0.10,
-  rotY: 0.00,
-  targetRotX: 0.10,
-  targetRotY: 0.00
+  // градусы
+  yaw: -30,   // влево на 30°
+  pitch: 0,   // по центру по высоте
+
+  // служебное
+  zoomMul: 1.0
 };
 
 export function initPreviewThree(container, size) {
@@ -73,10 +75,9 @@ export function setPreviewModel(three, root) {
   scene.add(root);
 
   // сброс вращения как в setModel() в твоём файле :contentReference[oaicite:5]{index=5}
-  state.targetRotX = 0.10;
-  state.targetRotY = 0.00;
-  state.rotX = 0.10;
-  state.rotY = 0.00;
+state.yaw = -30;
+state.pitch = 0;
+state.zoomMul = 1.0;
 
   fitCameraToModel(three.camera, root);
   updateCameraPosition(three.camera);
@@ -108,15 +109,19 @@ function fitCameraToModel(camera, root) {
 }
 
 function updateCameraPosition(camera) {
-  const r = state.radius;
+  const r = state.radius * state.zoomMul;
 
-  // предметная дистанция (НЕ математическая)
-  const dist = r * 0.875;
+  const yawRad = THREE.MathUtils.degToRad(state.yaw);
+  const pitchRad = THREE.MathUtils.degToRad(state.pitch);
+
+  const x = Math.sin(yawRad) * Math.cos(pitchRad);
+  const z = Math.cos(yawRad) * Math.cos(pitchRad);
+  const y = Math.sin(pitchRad);
 
   camera.position.set(
-    -dist * 0.7,   // слева
-    -dist * 0.15,  // чуть снизу
-     dist * 0.9    // вперед
+    x * r,
+    y * r,
+    z * r
   );
 
   camera.lookAt(0, 0, 0);
@@ -147,4 +152,35 @@ function setupLights(scene) {
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.04));
   scene.add(new THREE.HemisphereLight(0xffffff, 0x0a0a0a, 0.07));
+}
+export function renderPreview(three) {
+  three.renderer.render(three.scene, three.camera);
+}
+
+// ✅ ВСТАВЛЯЕМ ПОСЛЕ
+
+export function rotatePreviewYaw(dir, three) {
+  state.yaw += dir * 5;
+  updateCameraPosition(three.camera);
+  three.renderer.render(three.scene, three.camera);
+}
+
+export function rotatePreviewPitch(dir, three) {
+  state.pitch = THREE.MathUtils.clamp(
+    state.pitch + dir * 5,
+    -45,
+    45
+  );
+  updateCameraPosition(three.camera);
+  three.renderer.render(three.scene, three.camera);
+}
+
+export function setPreviewZoom(value, three) {
+  state.zoomMul = THREE.MathUtils.clamp(
+    Number(value),
+    0.5,
+    2.5
+  );
+  updateCameraPosition(three.camera);
+  three.renderer.render(three.scene, three.camera);
 }
