@@ -111,7 +111,7 @@ function updateCameraPosition(camera) {
   const r = state.radius;
 
   // предметная дистанция (НЕ математическая)
-  const dist = r * 0.85;
+  const dist = r * 0.875;
 
   camera.position.set(
     -dist * 0.7,   // слева
