@@ -178,8 +178,9 @@ export const MODELS = [
       normal: `${BASE}textures/molbert/molbert2_4_Normal.jpg`,
       rough: `${BASE}textures/molbert/molbert2_4_Roughness.jpg`,
       metal: `${BASE}textures/molbert/molbert2_4_Metallic.jpg`
-    }
-  }
+     }
+   }
+ }
 ];
 
 export function getModelMeta(id) {
