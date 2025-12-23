@@ -313,6 +313,7 @@ scene.traverse((obj) => {
     tex.colorSpace = THREE.SRGBColorSpace;
     mat.map = tex;
   }
+        mat.color.setScalar(1.15);
 
   if (desc.normal) {
     mat.normalMap = await loadTextureCached(desc.normal);
