@@ -125,7 +125,6 @@ function updateCameraPosition(camera) {
 
   camera.lookAt(0, r * 0.35, 0);
 }
-}
 
 function setupLights(scene) {
   // 1:1 копия твоего освещения :contentReference[oaicite:6]{index=6}
