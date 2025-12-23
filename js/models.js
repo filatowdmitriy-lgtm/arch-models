@@ -308,11 +308,25 @@ scene.traverse((obj) => {
       if (!desc) return;
 
       materialTasks.push((async () => {
-        if (desc.base)   mat.map          = await loadTextureCached(desc.base);
-        if (desc.normal) mat.normalMap    = await loadTextureCached(desc.normal);
-        if (desc.rough)  mat.roughnessMap = await loadTextureCached(desc.rough);
-        if (desc.metal)  mat.metalnessMap = await loadTextureCached(desc.metal);
+  if (desc.base) {
+    const tex = await loadTextureCached(desc.base);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    mat.map = tex;
+  }
 
+  if (desc.normal) {
+    mat.normalMap = await loadTextureCached(desc.normal);
+  }
+
+  if (desc.rough) {
+    mat.roughnessMap = await loadTextureCached(desc.rough);
+  }
+
+  if (desc.metal) {
+    mat.metalnessMap = await loadTextureCached(desc.metal);
+  }
+        mat.metalness = 1.0;
+        mat.roughness = 1.0;
         mat.needsUpdate = true;
       })());
     });
