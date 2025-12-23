@@ -3,7 +3,9 @@ import {
   initPreviewThree,
   setPreviewModel,
   resizePreview,
-  renderPNG
+  renderPNG,
+  rotatePreviewYaw,
+  rotatePreviewPitch
 } from "./threePreview.js";
 
 const elWrap = document.getElementById("wrap");
@@ -24,6 +26,23 @@ MODELS.forEach((m) => {
 // --- init preview three ---
 let size = parseInt(elSizeSelect.value, 10);
 let three = initPreviewThree(elWrap, size);
+
+// --- preview camera controls ---
+document.getElementById("cam-left").onclick = () => {
+  rotatePreviewYaw(-1, three);
+};
+
+document.getElementById("cam-right").onclick = () => {
+  rotatePreviewYaw(1, three);
+};
+
+document.getElementById("cam-up").onclick = () => {
+  rotatePreviewPitch(1, three);
+};
+
+document.getElementById("cam-down").onclick = () => {
+  rotatePreviewPitch(-1, three);
+};
 
 // состояние
 let currentModelId = MODELS[0]?.id ?? null;
