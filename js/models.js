@@ -313,7 +313,6 @@ scene.traverse((obj) => {
     tex.colorSpace = THREE.SRGBColorSpace;
     mat.map = tex;
   }
-        mat.color.setScalar(1.15);
 
   if (desc.normal) {
     mat.normalMap = await loadTextureCached(desc.normal);
@@ -324,10 +323,16 @@ scene.traverse((obj) => {
   }
 
   if (desc.metal) {
-    mat.metalnessMap = await loadTextureCached(desc.metal);
-  }
-        mat.metalness = 1.0;
-        mat.roughness = 1.0;
+  // ЭТО МЕТАЛЛ
+  mat.metalnessMap = await loadTextureCached(desc.metal);
+  mat.metalness = 1.0;
+} else {
+  // ЭТО НЕ МЕТАЛЛ
+  mat.metalness = 0.0;
+}
+
+mat.roughness = 1.0;
+
         mat.needsUpdate = true;
       })());
     });
