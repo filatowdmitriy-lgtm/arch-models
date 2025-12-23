@@ -110,21 +110,18 @@ function fitCameraToModel(camera, root) {
 function updateCameraPosition(camera) {
   const r = state.radius;
 
-  // перевод FOV в радианы
-  const fov = THREE.MathUtils.degToRad(camera.fov);
+  // предметная дистанция (НЕ математическая)
+  const dist = r * 2.2;
 
-  // дистанция, чтобы модель ЦЕЛИКОМ влезла в кадр
-  const dist = (r / Math.sin(fov / 2)) * 0.9; // 1.15 = небольшой запас
-
-  // каталожный ракурс ~45°
   camera.position.set(
-    -dist * 0.7,  // слева
-    -dist * 0.35, // пониже
-     dist * 0.7   // вперед
+    -dist * 0.7,   // слева
+    -dist * 0.15,  // чуть снизу
+     dist * 0.9    // вперед
   );
 
-  camera.lookAt(0, r * 0.35, 0);
+  camera.lookAt(0, r * 0.3, 0);
 }
+
 
 function setupLights(scene) {
   // 1:1 копия твоего освещения :contentReference[oaicite:6]{index=6}
