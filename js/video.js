@@ -141,33 +141,31 @@ v.muted = true;
 v.playsInline = true;
 v.setAttribute("playsinline", "");
 v.setAttribute("webkit-playsinline", "");
-  v.addEventListener("play", async () => {
-  // fullscreen / скрытие UI
-setActive(cardObj);
-if (onPlayCb) onPlayCb();
+v.addEventListener("play", () => {
+  // fullscreen + UI
+  setActive(cardObj);
+  if (onPlayCb) onPlayCb();
 
-  // если blob уже загружен — ничего не делаем
+  // blob уже есть — ничего не делаем
   if (v.dataset.blobReady) return;
 
-  try {
-    const res = await cachedFetch(srcUrl);
-    const blob = await res.blob();
+  // 🔥 ПАРАЛЛЕЛЬНО, БЕЗ await
+  cachedFetch(srcUrl)
+    .then(res => res.blob())
+    .then(blob => {
+      console.log("VIDEO BLOB:", blob.type, blob.size);
 
-    console.log("VIDEO BLOB:", blob.type, blob.size);
+      const blobUrl = URL.createObjectURL(blob);
 
-    const blobUrl = URL.createObjectURL(blob);
-    v.src = blobUrl;
-
-    v.dataset.blobReady = "1";
-
-    v.muted = false;
-    v.play(); // ⚠️ ВАЖНО: НЕТ pause()
-
-    warmCache(srcUrl);
-  } catch (e) {
-    console.error("Video blob load failed:", e);
-  }
+      // ⚠️ ВАЖНО: БЕЗ play()
+      v.src = blobUrl;
+      v.dataset.blobReady = "1";
+    })
+    .catch(e => {
+      console.error("Video blob load failed:", e);
+    });
 });
+
 
 
 
