@@ -132,11 +132,27 @@ v.setAttribute("webkit-playsinline", "");
   v.playsInline = true;
 
 const srcUrl = withInitData(url);
-v.src = srcUrl;
 
-v.preload = "auto"; // CHANGED
-v.muted = true;     // ADDED (критично для iOS)
-v.load();           // ADDED (критично для Telegram iOS)
+// === BLOB ЗАГРУЗКА (КАК РАНЬШЕ) ===
+(async () => {
+  try {
+    const res = await cachedFetch(srcUrl);
+    const blob = await res.blob();
+
+    const blobUrl = URL.createObjectURL(blob);
+
+    v.src = blobUrl;
+    v.preload = "auto";
+    v.muted = false;
+    v.playsInline = true;
+    v.setAttribute("playsinline", "");
+    v.setAttribute("webkit-playsinline", "");
+
+    v.load();
+  } catch (e) {
+    console.error("Video blob load failed:", e);
+  }
+})();
 
   // metadata hack (как было) — чтобы таймлайн в Telegram не глючил
   v.addEventListener("loadedmetadata", () => {
