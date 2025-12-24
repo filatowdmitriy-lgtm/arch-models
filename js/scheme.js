@@ -14,18 +14,16 @@
 // Работает строго с overlayElement и imgElement.
 //
 // Использование:
-//   import { initScheme, setSchemeImages, activateScheme, deactivateScheme } from "./scheme.js";
-//
-//   initScheme({ overlayEl, imgEl, onUiVisibilityChange });
-//   setSchemeImages(listOfUrls);
-//   activateScheme();
-//   deactivateScheme();
-//
+// import { initScheme, setSchemeImages, activateScheme, deactivateScheme } from "./scheme.js";
+// initScheme({ overlayEl: ..., imgEl: ..., onUiVisibility: (hidden) => {} });
+// setSchemeImages(model.schemes);
+// activateScheme();
+// deactivateScheme();
 
 let overlay = null;
 let img = null;
 
-let images = [];        // массив URL схем
+let images = [];  // массив URL схем
 let activeIndex = 0;
 
 // Масштаб
@@ -50,6 +48,11 @@ let swipeStartY = 0;
 let swipeEndX = 0;
 let swipeEndY = 0;
 
+// === ADDED: swipe-follow state (drag + snap) ===
+let swipeFollowX = 0;
+let swipeAnimating = false;
+// === END ADDED ===
+
 // UI auto-hide
 let uiHidden = false;
 let uiShowTimer = null;
@@ -68,14 +71,25 @@ let active = false;
 export function initScheme({ overlayEl, imgEl, onUiVisibility }) {
   overlay = overlayEl;
   img = imgEl;
-  onUiVisibilityChange = onUiVisibility;
+  onUiVisibilityChange = onUiVisibility || null;
 
   if (!overlay || !img) {
-    console.error("initScheme: wrong DOM elements");
+    console.error("scheme.js: overlay/img not provided");
     return;
   }
 
-  initEvents();
+  // Сбрасываем стиль, чтобы управлять трансформами сами
+  img.style.transformOrigin = "0 0";
+  img.style.userSelect = "none";
+  img.draggable = false;
+
+  // На загрузку картинки — сброс трансформа
+  img.addEventListener("load", () => {
+    if (!active) return;
+    resetTransform();
+  });
+
+  attachEvents();
 }
 
 /* ============================================================
@@ -92,21 +106,130 @@ export function setSchemeImages(urlList) {
 }
 
 /* ============================================================
-   АКТИВАЦИЯ / ДЕАКТИВАЦИЯ РЕЖИМА
+   АКТИВАЦИЯ / ДЕАКТИВ
    ============================================================ */
 
 export function activateScheme() {
   active = true;
-  resetTransform(); // fit-to-screen
+  resetTransform();
 }
 
 export function deactivateScheme() {
   active = false;
-  showUi();         // при выходе показываем UI
+  hideUi(false);
+}
+
+
+/* ============================================================
+   TRANSFORM HELPERS
+   ============================================================ */
+
+function computeFitScale() {
+  if (!overlay || !img) return 1;
+
+  const rect = overlay.getBoundingClientRect();
+  const w = img.naturalWidth || rect.width;
+  const h = img.naturalHeight || rect.height;
+
+  if (!w || !h) return 1;
+
+  const scale = Math.min(rect.width / w, rect.height / h);
+  return scale > 0 ? scale : 1;
 }
 
 /* ============================================================
-   СБРОС (fit-to-screen)
+   APPLY TRANSFORM
+   ============================================================ */
+
+function applyTransform() {
+  if (!overlay || !img) return;
+
+  const rect = overlay.getBoundingClientRect();
+
+  const total = baseScale * userScale;
+
+  const imgW = (img.naturalWidth || rect.width) * total;
+  const imgH = (img.naturalHeight || rect.height) * total;
+
+  const baseX = (rect.width - imgW) / 2;
+  const baseY = (rect.height - imgH) / 2;
+
+  // === ADDED: swipe-follow (drag) offset + transition control ===
+  const swipeX = (touchMode === "swipe" ? swipeFollowX : 0);
+  if (!swipeAnimating) img.style.transition = "none";
+  // === END ADDED ===
+
+  const x = baseX + tx + swipeX;
+  const y = baseY + ty;
+
+  img.style.transform = `translate(${x}px, ${y}px) scale(${total})`;
+
+  updateUiAutoHide();
+}
+
+/* ============================================================
+   ZOOM-AT-POINT (колесо и pinch)
+   ============================================================ */
+
+function zoomAtPoint(clientX, clientY, newUserScale) {
+  if (!overlay || !img) return;
+
+  const rect = overlay.getBoundingClientRect();
+
+  const prevUser = userScale;
+  const nextUser = Math.max(1, Math.min(4, newUserScale));
+
+  if (Math.abs(nextUser - prevUser) < 0.0001) return;
+
+  // Координата точки в overlay
+  const px = clientX - rect.left;
+  const py = clientY - rect.top;
+
+  const prevTotal = baseScale * prevUser;
+  const nextTotal = baseScale * nextUser;
+
+  // Позиция картинки в overlay до изменения
+  const imgWPrev = (img.naturalWidth || rect.width) * prevTotal;
+  const imgHPrev = (img.naturalHeight || rect.height) * prevTotal;
+
+  const baseXPrev = (rect.width - imgWPrev) / 2;
+  const baseYPrev = (rect.height - imgHPrev) / 2;
+
+  const beforeX = baseXPrev + tx;
+  const beforeY = baseYPrev + ty;
+
+  // Точка в координатах картинки (до масштаба)
+  const ix = (px - beforeX) / prevTotal;
+  const iy = (py - beforeY) / prevTotal;
+
+  // Позиция картинки в overlay после изменения
+  const imgWNext = (img.naturalWidth || rect.width) * nextTotal;
+  const imgHNext = (img.naturalHeight || rect.height) * nextTotal;
+
+  const baseXNext = (rect.width - imgWNext) / 2;
+  const baseYNext = (rect.height - imgHNext) / 2;
+
+  // Хотим чтобы ix/iy остались под курсором px/py
+  const afterX = px - ix * nextTotal;
+  const afterY = py - iy * nextTotal;
+
+  tx = afterX - baseXNext;
+  ty = afterY - baseYNext;
+
+  userScale = nextUser;
+
+  // Если возвращаемся к 1 — сбрасываем пан
+  if (userScale <= 1.001) {
+    userScale = 1;
+    tx = 0;
+    ty = 0;
+  }
+
+  applyTransform();
+}
+
+/* ============================================================
+   RESET TRANSFORM (fit-to-screen)
    ============================================================ */
 
 function resetTransform() {
@@ -132,142 +255,29 @@ function resetTransform() {
 }
 
 /* ============================================================
-   COMPUTE FIT SCALE
+   UI AUTO HIDE
    ============================================================ */
 
-function computeFitScale() {
-  const rect = overlay.getBoundingClientRect();
-  const w = img.naturalWidth || rect.width;
-  const h = img.naturalHeight || rect.height;
+function hideUi(hidden) {
+  uiHidden = hidden;
 
-  if (!w || !h) return 1;
-
-  const scale = Math.min(rect.width / w, rect.height / h);
-  return scale > 0 ? scale : 1;
-}
-
-/* ============================================================
-   APPLY TRANSFORM
-   ============================================================ */
-
-function applyTransform() {
-  if (!overlay || !img) return;
-
-  const rect = overlay.getBoundingClientRect();
-  const w = img.naturalWidth || rect.width;
-  const h = img.naturalHeight || rect.height;
-
-  const total = baseScale * userScale;
-
-  const imgW = w * total;
-  const imgH = h * total;
-
-  const baseX = (rect.width - imgW) / 2;
-  const baseY = (rect.height - imgH) / 2;
-
-  const x = baseX + tx;
-  const y = baseY + ty;
-
-  img.style.transform = `translate(${x}px, ${y}px) scale(${total})`;
-
-  updateUiAutoHide();
-}
-
-/* ============================================================
-   ZOOM-AT-POINT (колесо и pinch)
-   ============================================================ */
-
-function clampUserScale(s) {
-  return Math.min(4, Math.max(1, s)); // диапазон 1–4 как в 8.html
-}
-
-function zoomAtPoint(clientX, clientY, newScale) {
-  if (!active) return;
-
-  newScale = clampUserScale(newScale);
-
-  // Если очень близко к 1 → просто reset()
-  if (Math.abs(newScale - 1) < 1e-4) {
-    resetTransform();
-    return;
-  }
-
-  const rect = overlay.getBoundingClientRect();
-  const w = img.naturalWidth || rect.width;
-  const h = img.naturalHeight || rect.height;
-
-  const sx = clientX - rect.left;
-  const sy = clientY - rect.top;
-
-  const totalBefore = baseScale * userScale;
-  const imgWBefore = w * totalBefore;
-  const imgHBefore = h * totalBefore;
-  const baseXBefore = (rect.width - imgWBefore) / 2;
-  const baseYBefore = (rect.height - imgHBefore) / 2;
-
-  const lx = (sx - (baseXBefore + tx)) / totalBefore;
-  const ly = (sy - (baseYBefore + ty)) / totalBefore;
-
-  const totalAfter = baseScale * newScale;
-  const imgWAfter = w * totalAfter;
-  const imgHAfter = h * totalAfter;
-
-  const baseXAfter = (rect.width - imgWAfter) / 2;
-  const baseYAfter = (rect.height - imgHAfter) / 2;
-
-  tx = sx - (baseXAfter + lx * totalAfter);
-  ty = sy - (baseYAfter + ly * totalAfter);
-
-  userScale = newScale;
-
-  applyTransform();
-}
-
-/* ============================================================
-   UI AUTO-HIDE
-   ============================================================ */
-
-function updateUiAutoHide() {
-  if (!active) {
-    showUi();
-    return;
-  }
-
-  const shouldHide = userScale > 1.1;
-
-  if (shouldHide !== uiHidden) {
-    uiHidden = shouldHide;
-    if (onUiVisibilityChange) {
-      onUiVisibilityChange(shouldHide);
-    }
+  if (onUiVisibilityChange) {
+    onUiVisibilityChange(hidden);
   }
 }
 
 function showUiTemporarily() {
-  if (!uiHidden) return;
-
-  // показать
-  uiHidden = false;
-  if (onUiVisibilityChange) {
-    onUiVisibilityChange(false);
-  }
-
+  hideUi(false);
   if (uiShowTimer) clearTimeout(uiShowTimer);
-
-  uiShowTimer = setTimeout(() => {
-    if (active && userScale > 1.1) {
-      uiHidden = true;
-      if (onUiVisibilityChange) {
-        onUiVisibilityChange(true);
-      }
-    }
-  }, 2000);
+  uiShowTimer = setTimeout(() => hideUi(true), 1200);
 }
 
-function showUi() {
-  uiHidden = false;
-  if (onUiVisibilityChange) {
-    onUiVisibilityChange(false);
+function updateUiAutoHide() {
+  // Скрываем UI только если сильно приблизили
+  if (userScale > 1.15) {
+    hideUi(true);
+  } else {
+    hideUi(false);
   }
 }
 
@@ -291,36 +301,31 @@ function handleSwipe() {
   resetTransform();
 }
 
+
 /* ============================================================
-   СОБЫТИЯ МЫШИ И ТАЧА
+   EVENTS
    ============================================================ */
 
-function initEvents() {
+function attachEvents() {
   if (!overlay) return;
 
-  /* ----- МЫШЬ ----- */
+  /* ----- MOUSE PAN ----- */
+
   overlay.addEventListener("mousedown", (e) => {
     if (!active) return;
 
     isDragging = true;
     lastX = e.clientX;
     lastY = e.clientY;
-
-    swipeStartX = lastX;
-    swipeStartY = lastY;
   });
 
   window.addEventListener("mouseup", () => {
-    if (!isDragging) return;
-
     isDragging = false;
-    swipeEndX = lastX;
-    swipeEndY = lastY;
-    handleSwipe();
   });
 
   window.addEventListener("mousemove", (e) => {
-    if (!isDragging || !active) return;
+    if (!active) return;
+    if (!isDragging) return;
 
     const dx = e.clientX - lastX;
     const dy = e.clientY - lastY;
@@ -339,7 +344,7 @@ function initEvents() {
     if (!active) return;
     e.preventDefault();
 
-    const delta = -e.deltaY * 0.0015;
+    const delta = e.deltaY > 0 ? -0.15 : 0.15;
     const newScale = userScale + delta;
 
     zoomAtPoint(e.clientX, e.clientY, newScale);
@@ -352,7 +357,12 @@ function initEvents() {
     if (!active) return;
 
     if (e.touches.length === 1) {
-      touchMode = "pan";
+      // === ADDED: choose swipe mode on fit scale ===
+      // На fit-масштабе (userScale≈1) и при наличии нескольких схем — это свайп.
+      touchMode = (userScale <= 1.001 && images.length > 1) ? "swipe" : "pan";
+      swipeFollowX = 0;
+      swipeAnimating = false;
+      // === END ADDED ===
       const t = e.touches[0];
       lastX = t.clientX;
       lastY = t.clientY;
@@ -377,13 +387,24 @@ function initEvents() {
       lastX = t.clientX;
       lastY = t.clientY;
 
+      // === ADDED: swipe-follow drag while on fit scale ===
+      if (touchMode === "swipe") {
+        swipeFollowX = t.clientX - swipeStartX;
+        applyTransform();
+        return;
+      }
+      // === END ADDED ===
+
       if (userScale <= 1.001) return;
 
       tx += dx;
       ty += dy;
       applyTransform();
 
-    } else if (touchMode === "zoom" && e.touches.length === 2) {
+    } else if (
+      touchMode === "zoom" &&
+      e.touches.length === 2
+    ) {
       const dist = pinchDist(e.touches[0], e.touches[1]);
       const delta = (dist - lastPinchDist) * 0.005;
 
@@ -399,11 +420,59 @@ function initEvents() {
   window.addEventListener("touchend", (e) => {
     if (!active) return;
 
-    if (touchMode === "pan" && e.touches.length === 0) {
+    // === ADDED: swipe-follow snap / change on touchend ===
+    if ((touchMode === "pan" || touchMode === "swipe") && e.touches.length === 0) {
       swipeEndX = lastX;
       swipeEndY = lastY;
-      handleSwipe();
+
+      if (touchMode === "swipe") {
+        // критерии как в handleSwipe, но с анимацией
+        const dx = swipeEndX - swipeStartX;
+        const dy = swipeEndY - swipeStartY;
+
+        if (Math.abs(dx) >= 60 && Math.abs(dx) > Math.abs(dy) && images.length > 1 && userScale === 1) {
+          const rect = overlay.getBoundingClientRect();
+          const dir = dx < 0 ? 1 : -1; // влево -> next, вправо -> prev
+
+          swipeAnimating = true;
+          img.style.transition = "transform 0.22s ease-out";
+          swipeFollowX = dx < 0 ? -rect.width : rect.width;
+          applyTransform();
+
+          const onDone = () => {
+            img.removeEventListener("transitionend", onDone);
+
+            activeIndex = (activeIndex + dir + images.length) % images.length;
+            img.src = images[activeIndex];
+
+            swipeFollowX = 0;
+            swipeAnimating = false;
+            img.style.transition = "none";
+            resetTransform();
+          };
+
+          img.addEventListener("transitionend", onDone);
+        } else {
+          // не дотянули — возвращаемся
+          swipeAnimating = true;
+          img.style.transition = "transform 0.18s ease-out";
+          swipeFollowX = 0;
+          applyTransform();
+
+          const onBack = () => {
+            img.removeEventListener("transitionend", onBack);
+            swipeAnimating = false;
+            img.style.transition = "none";
+            applyTransform();
+          };
+          img.addEventListener("transitionend", onBack);
+        }
+      } else {
+        // старое поведение для пан-режима (zoom > 1)
+        handleSwipe();
+      }
     }
+    // === END ADDED ===
 
     if (e.touches.length === 0) {
       touchMode = null;
@@ -423,8 +492,8 @@ function initEvents() {
 
     if (dt < 300) {
       // double tap
-      if (userScale <= 1.01) {
-        zoomAtPoint(e.clientX, e.clientY, 2.0);
+      if (userScale <= 1) {
+        zoomAtPoint(e.clientX, e.clientY, 2);
       } else {
         resetTransform();
       }
