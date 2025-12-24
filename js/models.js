@@ -20,7 +20,9 @@ export const MODELS = [
     schemes: [
       `${BASE}textures/doric/scheme1.jpg`
     ],
-    video: `${BASE}textures/doric/test_video.mp4`,
+video: [
+  `${BASE}textures/doric/test_video.mp4`
+],
     textures: {
       base: `${BASE}textures/doric/BaseColor.jpg`,
       normal: `${BASE}textures/doric/Normal.jpg`,
@@ -40,7 +42,9 @@ export const MODELS = [
     schemes: [
       `${BASE}textures/ionic/scheme1.jpg`
     ],
-    video: `${BASE}textures/ionic/test_video.mp4`,
+video: [
+  `${BASE}textures/doric/test_video.mp4`
+],
     textures: {
       base: `${BASE}textures/ionic/BaseColor.jpg`,
       normal: `${BASE}textures/ionic/Normal.jpg`,
@@ -60,7 +64,9 @@ export const MODELS = [
     schemes: [
       `${BASE}textures/ionic/scheme1.jpg`
     ],
-    video: `${BASE}textures/ionic/test_video.mp4`,
+video: [
+  `${BASE}textures/doric/test_video.mp4`
+],
     textures: {
       base: `${BASE}textures/balyasina1/BaseColor.jpg`,
       normal: `${BASE}textures/balyasina1/Normal.jpg`,
@@ -80,7 +86,9 @@ export const MODELS = [
     schemes: [
       `${BASE}textures/ionic/scheme1.jpg`
     ],
-    video: `${BASE}textures/ionic/test_video.mp4`,
+video: [
+  `${BASE}textures/doric/test_video.mp4`
+],
     textures: {
       base: `${BASE}textures/balyasina2/BaseColor.jpg`,
       normal: `${BASE}textures/balyasina2/Normal.jpg`,
@@ -100,7 +108,9 @@ export const MODELS = [
     schemes: [
       `${BASE}textures/ionic/scheme1.jpg`
     ],
-    video: `${BASE}textures/ionic/test_video.mp4`,
+video: [
+  `${BASE}textures/doric/test_video.mp4`
+],
     textures: {
       base: `${BASE}textures/kapitel2/BaseColor.jpg`,
       normal: `${BASE}textures/kapitel2/Normal.jpg`,
@@ -120,7 +130,9 @@ export const MODELS = [
     schemes: [
       `${BASE}textures/ionic/scheme1.jpg`
     ],
-    video: `${BASE}textures/ionic/test_video.mp4`,
+video: [
+  `${BASE}textures/doric/test_video.mp4`
+],
     textures: {
       base: `${BASE}textures/kapitel1/BaseColor.jpg`,
       normal: `${BASE}textures/kapitel1/Normal.jpg`,
@@ -140,7 +152,9 @@ export const MODELS = [
     schemes: [
       `${BASE}textures/ionic/scheme1.jpg`
     ],
-    video: `${BASE}textures/ionic/test_video.mp4`,
+video: [
+  `${BASE}textures/doric/test_video.mp4`
+],
     textures: {
       base: `${BASE}textures/vase1/BaseColor.jpg`,
       normal: `${BASE}textures/vase1/Normal.jpg`,
@@ -160,7 +174,9 @@ export const MODELS = [
     schemes: [
       `${BASE}textures/ionic/scheme1.jpg`
     ],
-    video: `${BASE}textures/ionic/test_video.mp4`,
+video: [
+  `${BASE}textures/doric/test_video.mp4`
+],
     textures: {
       base: `${BASE}textures/vase2/BaseColor.jpg`,
       normal: `${BASE}textures/vase2/Normal.jpg`,
@@ -180,7 +196,9 @@ export const MODELS = [
     schemes: [
       `${BASE}textures/ionic/scheme1.jpg`
     ],
-    video: `${BASE}textures/ionic/test_video.mp4`,
+video: [
+  `${BASE}textures/doric/test_video.mp4`
+],
     textures: {
       base: `${BASE}textures/chair1/BaseColor.jpg`,
       normal: `${BASE}textures/chair1/Normal.jpg`,
@@ -200,7 +218,9 @@ export const MODELS = [
     schemes: [
       `${BASE}textures/ionic/scheme1.jpg`
     ],
-    video: `${BASE}textures/ionic/test_video.mp4`,
+video: [
+  `${BASE}textures/doric/test_video.mp4`
+],
     textures: {
       base: `${BASE}textures/chair2/BaseColor.jpg`,
       normal: `${BASE}textures/chair2/Normal.jpg`,
@@ -216,6 +236,12 @@ export const MODELS = [
   desc: "СПбГАСУ",
   url: `${BASE}models/molbert.gltf`,
   preview: `${BASE}textures/molbert/preview.png`,
+    schemes: [
+      `${BASE}textures/ionic/scheme1.jpg`
+    ],
+video: [
+  `${BASE}textures/doric/test_video.mp4`
+],
 
 materials: {
   "1": {
