@@ -18,9 +18,11 @@ export const MODELS = [
     preview: `${BASE}textures/doric/preview.png`,
     thumbLetter: "D",
     schemes: [
+      `${BASE}textures/doric/scheme1.jpg`,
       `${BASE}textures/doric/scheme1.jpg`
     ],
 video: [
+  `${BASE}textures/doric/test_video.mp4`,
   `${BASE}textures/doric/test_video.mp4`
 ],
     textures: {
