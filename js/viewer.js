@@ -280,8 +280,6 @@ function startModelLoading(meta) {
       threeSetModel(root);
 
       hideLoading();
-      // Дополнительно дублируем явный статус, как в 8.html
-      setStatus("Модель загружена: " + meta.name);
 
       // При загрузке всегда переходим в 3D режим
       setViewMode("3d");
