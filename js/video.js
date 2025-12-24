@@ -142,10 +142,8 @@ v.setAttribute("playsinline", "");
 v.setAttribute("webkit-playsinline", "");
   v.addEventListener("play", async () => {
   // fullscreen / скрытие UI
-  if (active) {
-    setActive(cardObj);
-    if (onPlayCb) onPlayCb();
-  }
+setActive(cardObj);
+if (onPlayCb) onPlayCb();
 
   // если blob уже загружен — ничего не делаем
   if (v.dataset.blobReady) return;
