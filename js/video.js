@@ -140,41 +140,38 @@ v.muted = true;
 v.playsInline = true;
 v.setAttribute("playsinline", "");
 v.setAttribute("webkit-playsinline", "");
+  v.addEventListener("play", async () => {
+  // fullscreen / скрытие UI
+  if (active) {
+    setActive(cardObj);
+    if (onPlayCb) onPlayCb();
+  }
 
-v.addEventListener(
-  "play",
-  async () => {
-    // если blob уже загружен — просто продолжаем играть
-    if (v.dataset.blobReady) {
-      v.muted = false;
-      return;
-    }
+  // если blob уже загружен — ничего не делаем
+  if (v.dataset.blobReady) return;
 
-    v.pause();
+  try {
+    const res = await cachedFetch(srcUrl);
+    const blob = await res.blob();
 
-    try {
-      const res = await cachedFetch(srcUrl);
-      const blob = await res.blob();
+    console.log("VIDEO BLOB:", blob.type, blob.size);
 
-      console.log("VIDEO BLOB:", blob.type, blob.size);
+    const blobUrl = URL.createObjectURL(blob);
+    v.src = blobUrl;
 
-      const blobUrl = URL.createObjectURL(blob);
-      v.src = blobUrl;
-      v.muted = false;
-v.play();      // 🔥 КРИТИЧНО: СИНХРОННО В PLAY-СОБЫТИИ
-v.load();
+    v.dataset.blobReady = "1";
 
+    v.muted = false;
+    v.play(); // ⚠️ ВАЖНО: НЕТ pause()
 
-      v.dataset.blobReady = "1";
+    warmCache(srcUrl);
+  } catch (e) {
+    console.error("Video blob load failed:", e);
+  }
+});
 
 
-      v.load();
-    } catch (e) {
-      console.error("Video blob load failed:", e);
-    }
-  },
-  { once: true }
-);
+
 
 
   // metadata hack (как было) — чтобы таймлайн в Telegram не глючил
@@ -193,16 +190,7 @@ v.load();
     warmCache(srcUrl);
   };
   v.addEventListener("loadeddata", warmOnce, { passive: true });
-  v.addEventListener("play", warmOnce, { passive: true });
 
-  // PLAY -> fullscreen логика (как раньше, но для конкретной карточки)
-  v.addEventListener("play", () => {
-    if (!active) return;
-
-    setActive(cardObj);
-
-    if (onPlayCb) onPlayCb();
-  });
 
   // PAUSE -> вернуть список
   v.addEventListener("pause", () => {
