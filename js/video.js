@@ -134,7 +134,66 @@ v.setAttribute("webkit-playsinline", "");
 
 // === BLOB ЗАГРУЗКА (КАК РАНЬШЕ) ===
 const srcUrl = withInitData(url);
+let blobLoading = false;
+
+const loadBlobOnce = async () => {
+  if (v.dataset.blobReady || blobLoading) return;
+  blobLoading = true;
+
+  try {
+    const res = await cachedFetch(srcUrl);
+    const blob = await res.blob();
+
+    console.log("VIDEO BLOB:", blob.type, blob.size);
+
+    const blobUrl = URL.createObjectURL(blob);
+    v.src = blobUrl;              // ⚠️ src ставим ДО play
+    v.dataset.blobReady = "1";
+  } catch (e) {
+    console.error("Video blob load failed:", e);
+  }
+};
+
 v.src = srcUrl;
+v.addEventListener(
+  "play",
+  async () => {
+    // UI
+    setActive(cardObj);
+    if (onPlayCb) onPlayCb();
+
+    // если уже на blob — ничего не делаем
+    if (v.dataset.blobReady === "1") return;
+
+    // iOS-safe: останавливаем нативный старт
+    try { v.pause(); } catch (e) {}
+
+    // грузим blob в user gesture
+    await loadBlobOnce();
+
+    // ждём metadata и стартуем
+    v.addEventListener(
+      "loadedmetadata",
+      async () => {
+        try {
+          v.currentTime = 0.001;
+          v.currentTime = 0;
+        } catch (e) {}
+
+        try {
+          v.muted = false;
+          await v.play();
+        } catch (e) {
+          console.warn("play failed:", e);
+        }
+      },
+      { once: true }
+    );
+
+    v.load();
+  },
+  { once: true }
+);
 
 
   
@@ -146,28 +205,6 @@ v.muted = true;
 v.playsInline = true;
 v.setAttribute("playsinline", "");
 v.setAttribute("webkit-playsinline", "");
-v.addEventListener("play", async () => {
-  setActive(cardObj);
-  if (onPlayCb) onPlayCb();
-
-  // blob загружаем ТОЛЬКО при user gesture
-  if (v.dataset.blobLoaded) return;
-
-  try {
-    const res = await cachedFetch(srcUrl);
-    const blob = await res.blob();
-
-    console.log("VIDEO BLOB:", blob.type, blob.size);
-
-    const blobUrl = URL.createObjectURL(blob);
-    v.src = blobUrl;               // src меняем ОДИН РАЗ
-    v.dataset.blobLoaded = "1";
-
-    v.play(); // повторно, но всё ещё внутри user gesture
-  } catch (e) {
-    console.error("Video blob load failed:", e);
-  }
-});
 
 
 
