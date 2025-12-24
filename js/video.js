@@ -134,25 +134,58 @@ v.setAttribute("webkit-playsinline", "");
 const srcUrl = withInitData(url);
 
 // === BLOB ЗАГРУЗКА (КАК РАНЬШЕ) ===
-(async () => {
-  try {
-    const res = await cachedFetch(srcUrl);
-    const blob = await res.blob();
+const srcUrl = withInitData(url);
 
-    const blobUrl = URL.createObjectURL(blob);
+v.preload = "none";
+v.muted = true;
+v.playsInline = true;
+v.setAttribute("playsinline", "");
+v.setAttribute("webkit-playsinline", "");
 
-    v.src = blobUrl;
-    v.preload = "auto";
-    v.muted = false;
-    v.playsInline = true;
-    v.setAttribute("playsinline", "");
-    v.setAttribute("webkit-playsinline", "");
+v.addEventListener(
+  "play",
+  async () => {
+    // если blob уже загружен — просто продолжаем играть
+    if (v.dataset.blobReady) {
+      v.muted = false;
+      return;
+    }
 
-    v.load();
-  } catch (e) {
-    console.error("Video blob load failed:", e);
-  }
-})();
+    v.pause();
+
+    try {
+      const res = await cachedFetch(srcUrl);
+      const blob = await res.blob();
+
+      console.log("VIDEO BLOB:", blob.type, blob.size);
+
+      const blobUrl = URL.createObjectURL(blob);
+      v.src = blobUrl;
+
+      v.dataset.blobReady = "1";
+
+      // ⚠️ КРИТИЧНО: play ТОЛЬКО после metadata
+      v.addEventListener(
+        "loadedmetadata",
+        async () => {
+          try {
+            v.muted = false;
+            await v.play();
+          } catch (e) {
+            console.warn("play failed:", e);
+          }
+        },
+        { once: true }
+      );
+
+      v.load();
+    } catch (e) {
+      console.error("Video blob load failed:", e);
+    }
+  },
+  { once: true }
+);
+
 
   // metadata hack (как было) — чтобы таймлайн в Telegram не глючил
   v.addEventListener("loadedmetadata", () => {
