@@ -123,10 +123,12 @@ function createCard(url) {
   wrap.className = "video-card";
 
   const v = document.createElement("video");
-  v.controls = true;
-v.preload = "auto"; // CHANGED
-  v.setAttribute("playsinline", "");
-  v.setAttribute("webkit-playsinline", "");
+v.controls = true;
+v.preload = "auto";           // CHANGED
+v.muted = true;               // ADDED (КРИТИЧНО ДЛЯ iOS)
+v.playsInline = true;         // ADDED
+v.setAttribute("playsinline", "");
+v.setAttribute("webkit-playsinline", "");
   v.playsInline = true;
 
   const srcUrl = withInitData(url);
