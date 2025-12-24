@@ -1,110 +1,102 @@
 // js/video.js
 //
-// iOS / Telegram SAFE video module
-// Основан на СТАРОМ рабочем video.js
-// + добавлен UI-контроллер карточек
-//
-// ВАЖНО:
-// - ОДИН <video>
-// - загрузка ТОЛЬКО через fetch → blob → objectURL
-// - карточки НЕ содержат <video>
+// Рабочая версия:
+// - iOS / Telegram SAFE
+// - blob → objectURL
+// - один <video>, список карточек
+// - без магии, без двойных src
 
-import { cachedFetch } from "./cache/cachedFetch.js";
-
-let videoEl = null;
+let video = null;
+let overlayEl = null;
 let listEl = null;
 let emptyEl = null;
 
+let currentBlobUrl = null;
 let active = false;
-let onPlayCb = null;
-let onPauseCb = null;
 
 let videoList = [];
-let currentIndex = -1;
-
-let currentBlobUrl = null;
-let isPlaying = false;
+let onPlayCb = null;
+let onPauseCb = null;
 
 /* ============================================================
    INIT
    ============================================================ */
 
 export function initVideo(refs, callbacks = {}) {
-  videoEl = refs?.videoEl || null;
-  listEl = refs?.listEl || null;
-  emptyEl = refs?.emptyEl || null;
+  overlayEl = refs.overlayEl;
+  listEl = refs.listEl;
+  emptyEl = refs.emptyEl;
 
   onPlayCb = callbacks.onPlay || null;
   onPauseCb = callbacks.onPause || null;
 
-  if (!videoEl || !listEl) {
-    console.error("initVideo: videoEl / listEl missing");
+  if (!overlayEl || !listEl) {
+    console.error("video.js: refs missing");
     return;
   }
 
-  // iOS / Telegram flags
-  videoEl.setAttribute("playsinline", "");
-  videoEl.setAttribute("webkit-playsinline", "");
-  videoEl.playsInline = true;
+  // создаём ЕДИНСТВЕННЫЙ video
+  video = document.createElement("video");
+  video.controls = true;
+  video.playsInline = true;
+  video.setAttribute("playsinline", "");
+  video.setAttribute("webkit-playsinline", "");
+  video.preload = "metadata";
 
-  // metadata hack (КАК БЫЛО)
-  videoEl.addEventListener("loadedmetadata", () => {
+  // metadata hack (как в старом рабочем коде)
+  video.addEventListener("loadedmetadata", () => {
     try {
-      videoEl.currentTime = 0.001;
-      videoEl.currentTime = 0;
-    } catch (e) {}
+      video.currentTime = 0.001;
+      video.currentTime = 0;
+    } catch {}
   });
 
-  videoEl.addEventListener("play", () => {
-    isPlaying = true;
+  video.addEventListener("play", () => {
     if (onPlayCb) onPlayCb();
   });
 
-  videoEl.addEventListener("pause", () => {
-    isPlaying = false;
+  video.addEventListener("pause", () => {
     if (onPauseCb) onPauseCb();
   });
+
+  overlayEl.innerHTML = "";
+  overlayEl.appendChild(video);
 }
 
 /* ============================================================
-   INTERNAL: LOAD VIDEO (СТАРАЯ ЛОГИКА)
+   BLOB LOADER (СТАРЫЙ, РАБОЧИЙ)
    ============================================================ */
 
-async function loadVideoByIndex(index) {
-  if (!videoEl) return;
-  if (index < 0 || index >= videoList.length) return;
+async function loadVideoBlob(url) {
+  if (!video) return;
 
-  currentIndex = index;
-  const url = videoList[index];
-
-  // очистка старого blob
+  // чистим прошлый blob
   if (currentBlobUrl) {
     URL.revokeObjectURL(currentBlobUrl);
     currentBlobUrl = null;
   }
 
   try {
-    // fetch → blob (КАК РАНЬШЕ)
-    const resp = await cachedFetch(url);
+    const resp = await fetch(url);
     const blob = await resp.blob();
 
     const objUrl = URL.createObjectURL(blob);
     currentBlobUrl = objUrl;
 
-    videoEl.src = objUrl;
-    videoEl.load();
+    video.src = objUrl;
+    video.load();
   } catch (e) {
-    console.error("Video load failed:", e);
-    videoEl.removeAttribute("src");
-    videoEl.load();
+    console.error("video load failed", e);
   }
 }
 
 /* ============================================================
-   UI: CARDS
+   LIST / CARDS
    ============================================================ */
 
-function renderCards() {
+export function setVideoList(list) {
+  videoList = Array.isArray(list) ? list : [];
+
   listEl.innerHTML = "";
 
   if (!videoList.length) {
@@ -114,16 +106,21 @@ function renderCards() {
 
   if (emptyEl) emptyEl.style.display = "none";
 
-  videoList.forEach((url, index) => {
+  videoList.forEach((url, idx) => {
     const card = document.createElement("div");
     card.className = "video-card";
-    card.dataset.index = index;
+    card.textContent = `Видео ${idx + 1}`;
 
-    card.addEventListener("click", () => {
-      if (isPlaying) {
-        try { videoEl.pause(); } catch (e) {}
+    card.addEventListener("click", async () => {
+      if (!active) return;
+
+      await loadVideoBlob(url);
+
+      try {
+        await video.play();
+      } catch (e) {
+        console.warn("play blocked", e);
       }
-      loadVideoByIndex(index);
     });
 
     listEl.appendChild(card);
@@ -131,24 +128,8 @@ function renderCards() {
 }
 
 /* ============================================================
-   PUBLIC API
+   ACTIVATE / DEACTIVATE
    ============================================================ */
-
-export function setVideoList(list) {
-  videoList = Array.isArray(list) ? list : (list ? [list] : []);
-  currentIndex = -1;
-
-  renderCards();
-
-  if (videoList.length > 0) {
-    loadVideoByIndex(0);
-  } else {
-    if (videoEl) {
-      videoEl.removeAttribute("src");
-      videoEl.load();
-    }
-  }
-}
 
 export function activateVideo() {
   active = true;
@@ -157,7 +138,15 @@ export function activateVideo() {
 export function deactivateVideo() {
   active = false;
 
-  if (videoEl && !videoEl.paused) {
-    try { videoEl.pause(); } catch (e) {}
+  if (video && !video.paused) {
+    video.pause();
   }
+
+  if (currentBlobUrl) {
+    URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = null;
+  }
+
+  video.removeAttribute("src");
+  video.load();
 }
