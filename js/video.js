@@ -124,7 +124,7 @@ function createCard(url) {
 
   const v = document.createElement("video");
   v.controls = true;
-  v.preload = "metadata";
+v.preload = "auto"; // CHANGED
   v.setAttribute("playsinline", "");
   v.setAttribute("webkit-playsinline", "");
   v.playsInline = true;
