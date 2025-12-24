@@ -378,6 +378,14 @@ function attachEvents() {
   overlay.addEventListener("touchmove", (e) => {
     if (!active) return;
     e.preventDefault();
+if (touchMode === "swipe" && e.touches.length === 1) {
+  const t = e.touches[0];
+  swipeFollowX = t.clientX - swipeStartX;
+  lastX = t.clientX;
+  lastY = t.clientY;
+  applyTransform();
+  return;
+}
 
     if (touchMode === "pan" && e.touches.length === 1) {
       const t = e.touches[0];
@@ -387,12 +395,6 @@ function attachEvents() {
       lastX = t.clientX;
       lastY = t.clientY;
 
-      // === ADDED: swipe-follow drag while on fit scale ===
-      if (touchMode === "swipe") {
-        swipeFollowX = t.clientX - swipeStartX;
-        applyTransform();
-        return;
-      }
       // === END ADDED ===
 
       if (userScale <= 1.001) return;
