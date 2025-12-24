@@ -172,23 +172,35 @@ v.addEventListener(
     await loadBlobOnce();
 
     // ждём metadata и стартуем
-    v.addEventListener(
-      "loadedmetadata",
-      async () => {
-        try {
-          v.currentTime = 0.001;
-          v.currentTime = 0;
-        } catch (e) {}
+v.addEventListener(
+  "play",
+  async () => {
+    // UI
+    setActive(cardObj);
+    if (onPlayCb) onPlayCb();
 
-        try {
-          v.muted = false;
-          await v.play();
-        } catch (e) {
-          console.warn("play failed:", e);
-        }
-      },
-      { once: true }
-    );
+    // если уже blob — ничего не делаем
+    if (v.dataset.blobReady === "1") return;
+
+    // 🔒 iOS: останавливаем нативный старт
+    v.pause();
+
+    try {
+      // ⬇️ грузим blob ВНУТРИ user gesture
+      await loadBlobOnce();
+
+      // 🔊 звук включаем ПОСЛЕ старта
+      v.muted = false;
+
+      // ▶️ КРИТИЧНО: play СИНХРОННО
+      v.play();
+    } catch (e) {
+      console.warn("iOS play blocked:", e);
+    }
+  },
+  { once: true }
+);
+
 
     v.load();
   },
@@ -197,14 +209,6 @@ v.addEventListener(
 
 
   
-  // ✅ BLOB загрузка ДО play (iOS / Telegram safe)
-
-
-v.preload = "none";
-v.muted = true;
-v.playsInline = true;
-v.setAttribute("playsinline", "");
-v.setAttribute("webkit-playsinline", "");
 
 
 
