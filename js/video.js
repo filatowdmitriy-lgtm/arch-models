@@ -131,8 +131,18 @@ v.setAttribute("playsinline", "");
 v.setAttribute("webkit-playsinline", "");
   v.playsInline = true;
 
-  const srcUrl = withInitData(url);
-  v.src = srcUrl;
+const srcUrl = withInitData(url);
+v.src = srcUrl;
+
+v.preload = "auto"; // CHANGED
+v.muted = true;     // ADDED (критично для iOS)
+v.load();           // ADDED (критично для Telegram iOS)
+const srcUrl = withInitData(url);
+v.src = srcUrl;
+
+v.preload = "auto"; // CHANGED
+v.muted = true;     // ADDED (критично для iOS)
+v.load();           // ADDED (критично для Telegram iOS)
 
   // metadata hack (как было) — чтобы таймлайн в Telegram не глючил
   v.addEventListener("loadedmetadata", () => {
