@@ -134,37 +134,41 @@ v.setAttribute("webkit-playsinline", "");
 
 // === BLOB ЗАГРУЗКА (КАК РАНЬШЕ) ===
 const srcUrl = withInitData(url);
+v.src = srcUrl;
 
-  v.src = srcUrl;
+
+  
+  // ✅ BLOB загрузка ДО play (iOS / Telegram safe)
+
+
 v.preload = "none";
 v.muted = true;
 v.playsInline = true;
 v.setAttribute("playsinline", "");
 v.setAttribute("webkit-playsinline", "");
-v.addEventListener("play", () => {
-  // fullscreen + UI
+v.addEventListener("play", async () => {
   setActive(cardObj);
   if (onPlayCb) onPlayCb();
 
-  // blob уже есть — ничего не делаем
-  if (v.dataset.blobReady) return;
+  // blob загружаем ТОЛЬКО при user gesture
+  if (v.dataset.blobLoaded) return;
 
-  // 🔥 ПАРАЛЛЕЛЬНО, БЕЗ await
-  cachedFetch(srcUrl)
-    .then(res => res.blob())
-    .then(blob => {
-      console.log("VIDEO BLOB:", blob.type, blob.size);
+  try {
+    const res = await cachedFetch(srcUrl);
+    const blob = await res.blob();
 
-      const blobUrl = URL.createObjectURL(blob);
+    console.log("VIDEO BLOB:", blob.type, blob.size);
 
-      // ⚠️ ВАЖНО: БЕЗ play()
-      v.src = blobUrl;
-      v.dataset.blobReady = "1";
-    })
-    .catch(e => {
-      console.error("Video blob load failed:", e);
-    });
+    const blobUrl = URL.createObjectURL(blob);
+    v.src = blobUrl;               // src меняем ОДИН РАЗ
+    v.dataset.blobLoaded = "1";
+
+    v.play(); // повторно, но всё ещё внутри user gesture
+  } catch (e) {
+    console.error("Video blob load failed:", e);
+  }
 });
+
 
 
 
@@ -179,14 +183,7 @@ v.addEventListener("play", () => {
     } catch (e) {}
   });
 
-  // прогрев кэша (один раз, когда браузер хоть что-то начал грузить)
-  let warmed = false;
-  const warmOnce = () => {
-    if (warmed) return;
-    warmed = true;
-    warmCache(srcUrl);
-  };
-  v.addEventListener("loadeddata", warmOnce, { passive: true });
+
 
 
   // PAUSE -> вернуть список
