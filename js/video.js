@@ -160,22 +160,13 @@ v.addEventListener(
 
       const blobUrl = URL.createObjectURL(blob);
       v.src = blobUrl;
+      v.muted = false;
+v.play();      // 🔥 КРИТИЧНО: СИНХРОННО В PLAY-СОБЫТИИ
+v.load();
+
 
       v.dataset.blobReady = "1";
 
-      // ⚠️ КРИТИЧНО: play ТОЛЬКО после metadata
-      v.addEventListener(
-        "loadedmetadata",
-        async () => {
-          try {
-            v.muted = false;
-            await v.play();
-          } catch (e) {
-            console.warn("play failed:", e);
-          }
-        },
-        { once: true }
-      );
 
       v.load();
     } catch (e) {
