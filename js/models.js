@@ -13,7 +13,7 @@ export const MODELS = [
   {
     id: "doric",
     name: "Дорическая капитель",
-    desc: "СПБГАСУ",
+    desc: "СПбГАСУ",
     url: `${BASE}models/doric.gltf`,
     preview: `${BASE}textures/doric/preview.png`,
     thumbLetter: "D",
@@ -33,7 +33,7 @@ export const MODELS = [
   {
     id: "ionic",
     name: "Ионическая капитель",
-    desc: "СПБГАСУ",
+    desc: "СПбГАСУ",
     url: `${BASE}models/ionic.gltf`,
     preview: `${BASE}textures/ionic/preview.png`,
     thumbLetter: "I",
@@ -53,7 +53,7 @@ export const MODELS = [
   {
     id: "balyasina1",
     name: "Балясина с лепестками",
-    desc: "СПБГАСУ",
+    desc: "СПбГАСУ",
     url: `${BASE}models/balyasina1.gltf`,
     preview: `${BASE}textures/balyasina1/preview.png`,
     thumbLetter: "I",
@@ -73,7 +73,7 @@ export const MODELS = [
   {
     id: "balyasina2",
     name: "Балясина шаровидная",
-    desc: "СПБГАСУ",
+    desc: "СПбГАСУ",
     url: `${BASE}models/balyasina2.gltf`,
     preview: `${BASE}textures/balyasina2/preview.png`,
     thumbLetter: "I",
@@ -93,7 +93,7 @@ export const MODELS = [
   {
     id: "kapitel2",
     name: "Малая капитель",
-    desc: "СПБГАСУ",
+    desc: "СПбГАСУ",
     url: `${BASE}models/kapitel2.gltf`,
     preview: `${BASE}textures/kapitel2/preview.png`,
     thumbLetter: "I",
@@ -113,7 +113,7 @@ export const MODELS = [
   {
     id: "kapitel1",
     name: "Большая капитель",
-    desc: "СПБГАСУ",
+    desc: "СПбГАСУ",
     url: `${BASE}models/kapitel1.gltf`,
     preview: `${BASE}textures/kapitel1/preview.png`,
     thumbLetter: "I",
@@ -133,7 +133,7 @@ export const MODELS = [
   {
     id: "vase1",
     name: "Малая ваза",
-    desc: "СПБГАСУ",
+    desc: "СПбГАСУ",
     url: `${BASE}models/vase1.gltf`,
     preview: `${BASE}textures/vase1/preview.png`,
     thumbLetter: "I",
@@ -153,7 +153,7 @@ export const MODELS = [
   {
     id: "vase2",
     name: "Большая ваза",
-    desc: "СПБГАСУ",
+    desc: "СПбГАСУ",
     url: `${BASE}models/vase2.gltf`,
     preview: `${BASE}textures/vase2/preview.png`,
     thumbLetter: "I",
@@ -172,8 +172,8 @@ export const MODELS = [
 },
   {
     id: "chair1",
-    name: "Табурет 1",
-    desc: "СПБГАСУ",
+    name: "Табурет квадратный",
+    desc: "СПбГАСУ",
     url: `${BASE}models/chair1.gltf`,
     preview: `${BASE}textures/chair1/preview.png`,
     thumbLetter: "I",
@@ -192,8 +192,8 @@ export const MODELS = [
 },
   {
     id: "chair2",
-    name: "Табурет 2",
-    desc: "СПБГАСУ",
+    name: "Табурет круглый",
+    desc: "СПбГАСУ",
     url: `${BASE}models/chair2.gltf`,
     preview: `${BASE}textures/chair2/preview.png`,
     thumbLetter: "I",
@@ -213,7 +213,7 @@ export const MODELS = [
 {
   id: "molbert",
   name: "Мольберт",
-  desc: "СПБГАСУ",
+  desc: "СПбГАСУ",
   url: `${BASE}models/molbert.gltf`,
   preview: `${BASE}textures/molbert/preview.png`,
 
