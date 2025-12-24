@@ -1,222 +1,163 @@
 // js/video.js
 //
-// CHANGED: новый UX видео:
-// - список карточек (вертикальный скролл)
-// - play на карточке -> fullscreen (как раньше), скрываем остальные
-// - pause -> возвращаем список в тот же scrollTop
+// iOS / Telegram SAFE video module
+// Основан на СТАРОМ рабочем video.js
+// + добавлен UI-контроллер карточек
 //
-// НЕ трогаем: Telegram-логику, viewer.js вкладки, кэш-логику в cachedFetch.js (мы её только вызываем для прогрева).
+// ВАЖНО:
+// - ОДИН <video>
+// - загрузка ТОЛЬКО через fetch → blob → objectURL
+// - карточки НЕ содержат <video>
 
-import { cachedFetch } from "./cache/cachedFetch.js"; // ADDED (прогрев IDB-кэша)
+import { cachedFetch } from "./cache/cachedFetch.js";
 
-let overlayEl = null; // ADDED
-let listEl = null;    // ADDED
-let emptyEl = null;   // ADDED
+let videoEl = null;
+let listEl = null;
+let emptyEl = null;
 
 let active = false;
 let onPlayCb = null;
 let onPauseCb = null;
 
 let videoList = [];
-let cards = []; // { wrap, video, url }
-let activeCard = null;
+let currentIndex = -1;
 
-let savedScrollTop = 0;
+let currentBlobUrl = null;
+let isPlaying = false;
 
-// ============================================================
-// INIT
-// ============================================================
+/* ============================================================
+   INIT
+   ============================================================ */
 
-export function initVideo(refs, callbacks = {}) { // CHANGED signature
-  overlayEl = refs?.overlayEl || null;
+export function initVideo(refs, callbacks = {}) {
+  videoEl = refs?.videoEl || null;
   listEl = refs?.listEl || null;
   emptyEl = refs?.emptyEl || null;
 
   onPlayCb = callbacks.onPlay || null;
   onPauseCb = callbacks.onPause || null;
 
-  if (!overlayEl || !listEl) {
-    console.error("initVideo: overlayEl/listEl not provided");
+  if (!videoEl || !listEl) {
+    console.error("initVideo: videoEl / listEl missing");
     return;
   }
 
-  // на всякий: чистим
-  listEl.innerHTML = "";
-  cards = [];
-  activeCard = null;
-}
+  // iOS / Telegram flags
+  videoEl.setAttribute("playsinline", "");
+  videoEl.setAttribute("webkit-playsinline", "");
+  videoEl.playsInline = true;
 
-// ============================================================
-// HELPERS
-// ============================================================
-
-function withInitData(url) {
-  // ADDED: как в models.js, но для видео
-  try {
-    if (!window.TG_INIT_DATA) return url;
-    const u = new URL(url);
-    if (!u.searchParams.get("initData")) {
-      u.searchParams.set("initData", window.TG_INIT_DATA);
-    }
-    return u.toString();
-  } catch (e) {
-    return url;
-  }
-}
-
-function warmCache(url) {
-  // ADDED: прогреваем IndexedDB-кэш, НЕ ломая streaming.
-  // Видео играет по обычному src (быстро), а cachedFetch параллельно сохранит blob в IDB.
-  try {
-    cachedFetch(url).catch(() => {});
-  } catch (e) {}
-}
-
-function stopAllExcept(exceptVideoEl) {
-  cards.forEach((c) => {
-    if (c.video !== exceptVideoEl) {
-      try {
-        c.video.pause();
-      } catch (e) {}
-    }
-  });
-}
-
-function clearActive() {
-  if (!activeCard) return;
-
-  activeCard.wrap.classList.remove("active");
-
-  // возвращаем scroll
-  if (listEl) {
-    const st = savedScrollTop;
-    // microtask -> чтобы DOM успел показать список
-    setTimeout(() => {
-      listEl.scrollTop = st;
-    }, 0);
-  }
-
-  activeCard = null;
-}
-
-function setActive(card) {
-  if (!card) return;
-
-  // запоминаем позицию списка
-  if (listEl) savedScrollTop = listEl.scrollTop;
-
-  // делаем активной
-  cards.forEach((c) => c.wrap.classList.remove("active"));
-  card.wrap.classList.add("active");
-  activeCard = card;
-
-  // остальные видео стопаем, чтобы не было “звуков из списка”
-  stopAllExcept(card.video);
-}
-
-// ============================================================
-// RENDER LIST
-// ============================================================
-
-function createCard(url) {
-  const wrap = document.createElement("div");
-  wrap.className = "video-card";
-
-  const v = document.createElement("video");
-  v.controls = true;
-  v.preload = "metadata";
-  v.setAttribute("playsinline", "");
-  v.setAttribute("webkit-playsinline", "");
-  v.playsInline = true;
-
-  const srcUrl = withInitData(url);
-  v.src = srcUrl;
-
-  // metadata hack (как было) — чтобы таймлайн в Telegram не глючил
-  v.addEventListener("loadedmetadata", () => {
+  // metadata hack (КАК БЫЛО)
+  videoEl.addEventListener("loadedmetadata", () => {
     try {
-      v.currentTime = 0.001;
-      v.currentTime = 0;
+      videoEl.currentTime = 0.001;
+      videoEl.currentTime = 0;
     } catch (e) {}
   });
 
-  // прогрев кэша (один раз, когда браузер хоть что-то начал грузить)
-  let warmed = false;
-  const warmOnce = () => {
-    if (warmed) return;
-    warmed = true;
-    warmCache(srcUrl);
-  };
-  v.addEventListener("loadeddata", warmOnce, { passive: true });
-  v.addEventListener("play", warmOnce, { passive: true });
-
-  // PLAY -> fullscreen логика (как раньше, но для конкретной карточки)
-  v.addEventListener("play", () => {
-    if (!active) return;
-
-    setActive(cardObj);
-
+  videoEl.addEventListener("play", () => {
+    isPlaying = true;
     if (onPlayCb) onPlayCb();
   });
 
-  // PAUSE -> вернуть список
-  v.addEventListener("pause", () => {
-    // если видео реально “выключили”, а не мы во время смены модели
-    clearActive();
+  videoEl.addEventListener("pause", () => {
+    isPlaying = false;
     if (onPauseCb) onPauseCb();
   });
-
-  wrap.appendChild(v);
-
-  const cardObj = { wrap, video: v, url: srcUrl };
-  return cardObj;
 }
 
-function render() {
-  if (!listEl) return;
+/* ============================================================
+   INTERNAL: LOAD VIDEO (СТАРАЯ ЛОГИКА)
+   ============================================================ */
 
+async function loadVideoByIndex(index) {
+  if (!videoEl) return;
+  if (index < 0 || index >= videoList.length) return;
+
+  currentIndex = index;
+  const url = videoList[index];
+
+  // очистка старого blob
+  if (currentBlobUrl) {
+    URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = null;
+  }
+
+  try {
+    // fetch → blob (КАК РАНЬШЕ)
+    const resp = await cachedFetch(url);
+    const blob = await resp.blob();
+
+    const objUrl = URL.createObjectURL(blob);
+    currentBlobUrl = objUrl;
+
+    videoEl.src = objUrl;
+    videoEl.load();
+  } catch (e) {
+    console.error("Video load failed:", e);
+    videoEl.removeAttribute("src");
+    videoEl.load();
+  }
+}
+
+/* ============================================================
+   UI: CARDS
+   ============================================================ */
+
+function renderCards() {
   listEl.innerHTML = "";
-  cards = [];
-  activeCard = null;
 
-  const has = Array.isArray(videoList) && videoList.length > 0;
+  if (!videoList.length) {
+    if (emptyEl) emptyEl.style.display = "block";
+    return;
+  }
 
-  if (emptyEl) emptyEl.style.display = has ? "none" : "block";
+  if (emptyEl) emptyEl.style.display = "none";
 
-  if (!has) return;
+  videoList.forEach((url, index) => {
+    const card = document.createElement("div");
+    card.className = "video-card";
+    card.dataset.index = index;
 
-  videoList.forEach((url) => {
-    const card = createCard(url);
-    cards.push(card);
-    listEl.appendChild(card.wrap);
+    card.addEventListener("click", () => {
+      if (isPlaying) {
+        try { videoEl.pause(); } catch (e) {}
+      }
+      loadVideoByIndex(index);
+    });
+
+    listEl.appendChild(card);
   });
 }
 
-// ============================================================
-// PUBLIC API (как было по именам)
-// ============================================================
+/* ============================================================
+   PUBLIC API
+   ============================================================ */
+
+export function setVideoList(list) {
+  videoList = Array.isArray(list) ? list : (list ? [list] : []);
+  currentIndex = -1;
+
+  renderCards();
+
+  if (videoList.length > 0) {
+    loadVideoByIndex(0);
+  } else {
+    if (videoEl) {
+      videoEl.removeAttribute("src");
+      videoEl.load();
+    }
+  }
+}
 
 export function activateVideo() {
   active = true;
 }
 
-export function setVideoList(list) {
-  videoList = Array.isArray(list) ? list : (list ? [list] : []);
-  render();
-}
-
 export function deactivateVideo() {
   active = false;
 
-  // гасим fullscreen-класс (viewer.js тоже снимает, но пусть будет дубль безопасно)
-  document.body.classList.remove("video-playing"); // ADDED
-
-  // пауза всех
-  cards.forEach((c) => {
-    try {
-      c.video.pause();
-    } catch (e) {}
-  });
-
-  clearActive();
+  if (videoEl && !videoEl.paused) {
+    try { videoEl.pause(); } catch (e) {}
+  }
 }
