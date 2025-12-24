@@ -135,6 +135,7 @@ v.setAttribute("webkit-playsinline", "");
 // === BLOB ЗАГРУЗКА (КАК РАНЬШЕ) ===
 const srcUrl = withInitData(url);
 
+  v.src = srcUrl;
 v.preload = "none";
 v.muted = true;
 v.playsInline = true;
