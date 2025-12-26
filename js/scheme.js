@@ -234,6 +234,7 @@ function zoomAtPoint(clientX, clientY, newUserScale) {
 
 function resetTransform() {
   if (!active || !overlay || !img) return;
+   if (!img.complete) return;
 
   // naturalWidth может ещё не быть доступен
   const perform = () => {
