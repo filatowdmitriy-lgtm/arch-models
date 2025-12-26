@@ -21,13 +21,13 @@
 // deactivateScheme();
 
 import { cachedFetch } from "./cache/cachedFetch.js";
+let currentSchemeBlobUrl = null;
 
 let overlay = null;
 let img = null;
 
 let images = [];  // массив URL схем
 let activeIndex = 0;
-let schemeBlobs = []; // blob URL схем
 
 
 // Масштаб
@@ -101,33 +101,34 @@ export function initScheme({ overlayEl, imgEl, onUiVisibility }) {
    ============================================================ */
 
 export async function setSchemeImages(urlList) {
-  // cleanup old blobs
-  for (const u of schemeBlobs) {
-    if (u) URL.revokeObjectURL(u);
-  }
-
   images = Array.isArray(urlList) ? urlList.slice() : [];
   activeIndex = 0;
-  schemeBlobs = [];
-
 
   if (!images.length || !img) return;
 
-  for (let i = 0; i < images.length; i++) {
-    try {
-      const blob = await cachedFetch(images[i]);
-      const blobUrl = URL.createObjectURL(blob);
-      schemeBlobs.push(blobUrl);
-    } catch (err) {
-      console.error("Scheme load failed:", images[i], err);
-      schemeBlobs.push(null);
-    }
+  await loadSchemeAtIndex(0);
+}
+async function loadSchemeAtIndex(index) {
+  if (!images[index] || !img) return;
+
+  // ОСВОБОЖДАЕМ ПРЕДЫДУЩУЮ СХЕМУ
+  if (currentSchemeBlobUrl) {
+    URL.revokeObjectURL(currentSchemeBlobUrl);
+    currentSchemeBlobUrl = null;
   }
 
-  if (schemeBlobs[0]) {
-    img.src = schemeBlobs[0];
+  try {
+    const blob = await cachedFetch(images[index]);
+    const blobUrl = URL.createObjectURL(blob);
+    currentSchemeBlobUrl = blobUrl;
+     activeIndex = index;
+    img.src = blobUrl;
+  } catch (err) {
+    console.error("Scheme load failed:", images[index], err);
   }
 }
+
+
 
 
 /* ============================================================
@@ -143,11 +144,12 @@ export function deactivateScheme() {
   active = false;
   hideUi(false);
 
-  for (const u of schemeBlobs) {
-    if (u) URL.revokeObjectURL(u);
+  if (currentSchemeBlobUrl) {
+    URL.revokeObjectURL(currentSchemeBlobUrl);
+    currentSchemeBlobUrl = null;
   }
-  schemeBlobs = [];
 }
+
 
 
 
@@ -323,11 +325,9 @@ function handleSwipe() {
   const dir = dx < 0 ? 1 : -1;
   activeIndex = (activeIndex + dir + images.length) % images.length;
 
-  if (schemeBlobs[activeIndex]) {
-  img.src = schemeBlobs[activeIndex];
-}
+ loadSchemeAtIndex(activeIndex);
 
-  resetTransform();
+
 }
 
 
@@ -474,17 +474,13 @@ if (touchMode === "swipe" && e.touches.length === 1) {
             img.removeEventListener("transitionend", onDone);
 
             activeIndex = (activeIndex + dir + images.length) % images.length;
-            if (schemeBlobs[activeIndex]) {
-  img.src = schemeBlobs[activeIndex];
-} else {
-  img.src = images[activeIndex];
-}
+           loadSchemeAtIndex(activeIndex);
+
 
 
             swipeFollowX = 0;
             swipeAnimating = false;
             img.style.transition = "none";
-            resetTransform();
           };
 
           img.addEventListener("transitionend", onDone);
