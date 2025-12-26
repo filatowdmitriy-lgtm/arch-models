@@ -152,8 +152,8 @@ video: [
     preview: `${BASE}textures/vase1/preview.png`,
     thumbLetter: "I",
     schemes: [
-      `${BASE}textures/ionic/1.png`,
-      `${BASE}textures/ionic/2.png`
+      `${BASE}textures/vase1/1.png`,
+      `${BASE}textures/vase1/2.png`
     ],
 video: [
   `${BASE}textures/doric/test_video.mp4`
