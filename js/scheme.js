@@ -101,9 +101,15 @@ export function initScheme({ overlayEl, imgEl, onUiVisibility }) {
    ============================================================ */
 
 export async function setSchemeImages(urlList) {
+  // cleanup old blobs
+  for (const u of schemeBlobs) {
+    if (u) URL.revokeObjectURL(u);
+  }
+
   images = Array.isArray(urlList) ? urlList.slice() : [];
   activeIndex = 0;
   schemeBlobs = [];
+
 
   if (!images.length || !img) return;
 
@@ -136,7 +142,13 @@ export function activateScheme() {
 export function deactivateScheme() {
   active = false;
   hideUi(false);
+
+  for (const u of schemeBlobs) {
+    if (u) URL.revokeObjectURL(u);
+  }
+  schemeBlobs = [];
 }
+
 
 
 /* ============================================================
@@ -264,14 +276,8 @@ function resetTransform() {
     applyTransform();
   };
 
-  if (!img.naturalWidth) {
-    img.onload = () => {
-      perform();
-      img.onload = null;
-    };
-  } else {
-    perform();
-  }
+if (!img.naturalWidth) return;
+perform();
 }
 
 /* ============================================================
@@ -468,7 +474,12 @@ if (touchMode === "swipe" && e.touches.length === 1) {
             img.removeEventListener("transitionend", onDone);
 
             activeIndex = (activeIndex + dir + images.length) % images.length;
-            img.src = images[activeIndex];
+            if (schemeBlobs[activeIndex]) {
+  img.src = schemeBlobs[activeIndex];
+} else {
+  img.src = images[activeIndex];
+}
+
 
             swipeFollowX = 0;
             swipeAnimating = false;
