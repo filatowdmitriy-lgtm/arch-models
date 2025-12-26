@@ -20,11 +20,15 @@
 // activateScheme();
 // deactivateScheme();
 
+import { cachedFetch } from "./cache/cachedFetch.js";
+
 let overlay = null;
 let img = null;
 
 let images = [];  // массив URL схем
 let activeIndex = 0;
+let schemeBlobs = []; // blob URL схем
+
 
 // Масштаб
 let baseScale = 1;      // fit-to-screen
@@ -96,14 +100,29 @@ export function initScheme({ overlayEl, imgEl, onUiVisibility }) {
    УСТАНОВКА СПИСКА ИЗОБРАЖЕНИЙ (m.schemes)
    ============================================================ */
 
-export function setSchemeImages(urlList) {
+export async function setSchemeImages(urlList) {
   images = Array.isArray(urlList) ? urlList.slice() : [];
   activeIndex = 0;
+  schemeBlobs = [];
 
-  if (img && images.length > 0) {
-    img.src = images[0];
+  if (!images.length || !img) return;
+
+  for (let i = 0; i < images.length; i++) {
+    try {
+      const blob = await cachedFetch(images[i]);
+      const blobUrl = URL.createObjectURL(blob);
+      schemeBlobs.push(blobUrl);
+    } catch (err) {
+      console.error("Scheme load failed:", images[i], err);
+      schemeBlobs.push(null);
+    }
+  }
+
+  if (schemeBlobs[0]) {
+    img.src = schemeBlobs[0];
   }
 }
+
 
 /* ============================================================
    АКТИВАЦИЯ / ДЕАКТИВ
@@ -298,7 +317,10 @@ function handleSwipe() {
   const dir = dx < 0 ? 1 : -1;
   activeIndex = (activeIndex + dir + images.length) % images.length;
 
-  img.src = images[activeIndex];
+  if (schemeBlobs[activeIndex]) {
+  img.src = schemeBlobs[activeIndex];
+}
+
   resetTransform();
 }
 
