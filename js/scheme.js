@@ -508,20 +508,26 @@ if (touchMode === "swipe" && e.touches.length === 1) {
           swipeFollowX = dx < 0 ? -rect.width : rect.width;
           applyTransform();
 
-          const onDone = async () => {
-  img.removeEventListener("transitionend", onDone);
+const nextIndex = (activeIndex + dir + images.length) % images.length;
 
-  activeIndex = (activeIndex + dir + images.length) % images.length;
+// 1️⃣ МГНОВЕННО меняем картинку (она уже preloaded)
+await loadSchemeAtIndex(nextIndex);
 
-  // 🔹 СНАЧАЛА меняем картинку (она уже preloaded)
-  await loadSchemeAtIndex(activeIndex);
+// 2️⃣ СТАВИМ её за экран БЕЗ анимации
+img.style.transition = "none";
+swipeAnimating = false;
 
-  // 🔹 ПОТОМ сбрасываем transform
+const rect = overlay.getBoundingClientRect();
+swipeFollowX = dx < 0 ? rect.width : -rect.width;
+applyTransform();
+
+// 3️⃣ НА СЛЕДУЮЩЕМ КАДРЕ — АНИМАЦИЯ
+requestAnimationFrame(() => {
+  swipeAnimating = true;
+  img.style.transition = "transform 0.22s ease-out";
   swipeFollowX = 0;
-  swipeAnimating = false;
-  img.style.transition = "none";
   applyTransform();
-};
+});
 
           img.addEventListener("transitionend", onDone);
         } else {
