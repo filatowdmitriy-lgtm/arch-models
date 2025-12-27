@@ -128,6 +128,7 @@ function createCard(url) {
   v.setAttribute("playsinline", "");
   v.setAttribute("webkit-playsinline", "");
   v.playsInline = true;
+  v.muted = true; // ⚠️ критично для iOS
 
   const srcUrl = withInitData(url);
   v.src = srcUrl;
@@ -152,10 +153,6 @@ function createCard(url) {
 
   // PLAY -> fullscreen логика (как раньше, но для конкретной карточки)
   v.addEventListener("play", () => {
-    if (!active) return;
-
-    setActive(cardObj);
-
     if (onPlayCb) onPlayCb();
   });
 
@@ -167,6 +164,16 @@ function createCard(url) {
   });
 
   wrap.appendChild(v);
+  wrap.addEventListener("click", () => {
+  if (!active) return;
+
+  setActive(cardObj);
+
+  try {
+    v.muted = false; // включаем звук только при реальном запуске
+    v.play();        // ⬅️ play ТОЛЬКО из user gesture
+  } catch (e) {}
+});
 
   const cardObj = { wrap, video: v, url: srcUrl };
   return cardObj;
