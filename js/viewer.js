@@ -32,7 +32,7 @@ import {
 } from "./scheme.js";
 import {
   initVideo,
-  loadVideo,
+  setVideoList,
   activateVideo,
   deactivateVideo
 } from "./video.js";
@@ -192,11 +192,11 @@ function setupUiHandlers() {
     setViewMode("scheme");
   });
 
-  tabVideoBtn.addEventListener("click", () => {
-    const meta = getCurrentModelMeta();
-    if (!meta || !meta.video) return;
-    setViewMode("video");
-  });
+tabVideoBtn.addEventListener("click", () => {
+  const meta = getCurrentModelMeta();
+  if (!meta || !meta.video || meta.video.length === 0) return;
+  setViewMode("video");
+});
 }
 
 /* ===============================
@@ -299,8 +299,8 @@ function startModelLoading(meta) {
 function configureViewTabsForModel(meta) {
   const { tabSchemeBtn, tabVideoBtn } = dom;
 
-  const hasScheme = meta.schemes && meta.schemes.length > 0;
-  const hasVideo = !!meta.video;
+const hasScheme = meta.schemes && meta.schemes.length > 0;
+const hasVideo = meta.video && meta.video.length > 0;
 
   // ----- СХЕМЫ -----
   if (hasScheme) {
@@ -312,14 +312,13 @@ function configureViewTabsForModel(meta) {
   }
 
   // ----- ВИДЕО -----
-  if (hasVideo) {
-    tabVideoBtn.classList.remove("disabled");
-    loadVideo(meta.video); // blob-загрузка видео
-  } else {
-    tabVideoBtn.classList.add("disabled");
-    loadVideo(null); // сбрасываем видео
-  }
-
+if (hasVideo) {
+  tabVideoBtn.classList.remove("disabled");
+  setVideoList(meta.video); // теперь массив
+} else {
+  tabVideoBtn.classList.add("disabled");
+  setVideoList([]); // сбрасываем
+}
   // По умолчанию всегда стартуем с 3D
   setViewMode("3d");
 }
