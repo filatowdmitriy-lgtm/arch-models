@@ -1,116 +1,79 @@
 // js/video.js
 //
-// Модуль отвечает за видео:
-// - загрузка через fetch → blob → objectURL;
-// - корректный таймлайн для всех браузеров (особенно в Telegram);
-// - metadata hack (перезапуск currentTime);
-// - пауза при выходе из режима;
-// - очистка старых blob-URL.
-//
-// НЕ отвечает за UI, вкладки, three.js, схемы, галерею.
+// Рабочая версия:
+// - iOS / Telegram SAFE
+// - blob → objectURL
+// - один <video>, список карточек
+// - без магии, без двойных src
 
 let video = null;
+let overlayEl = null;
+let listEl = null;
+let emptyEl = null;
+
 let currentBlobUrl = null;
 let active = false;
+
+let videoList = [];
 let onPlayCb = null;
 let onPauseCb = null;
-let videoList = [];
-let videoIndex = 0;
-let isPlaying = false;
-
-// свайп
-let swipeStartX = 0;
-let swipeStartY = 0;
 
 /* ============================================================
-   ИНИЦИАЛИЗАЦИЯ
+   INIT
    ============================================================ */
 
-export function initVideo(videoElement, callbacks = {}) {
-  video = videoElement;
+export function initVideo(refs, callbacks = {}) {
+  overlayEl = refs.overlayEl;
+  listEl = refs.listEl;
+  emptyEl = refs.emptyEl;
+
   onPlayCb = callbacks.onPlay || null;
   onPauseCb = callbacks.onPause || null;
 
-  if (!video) {
-    console.error("initVideo: videoElement is null");
+  if (!overlayEl || !listEl) {
+    console.error("video.js: refs missing");
     return;
   }
 
-  // Важно для Telegram + iOS
+  // создаём ЕДИНСТВЕННЫЙ video
+  video = document.createElement("video");
+  video.controls = true;
+  video.playsInline = true;
   video.setAttribute("playsinline", "");
   video.setAttribute("webkit-playsinline", "");
-  video.playsInline = true;
+  video.preload = "metadata";
 
-  // Хак для корректного таймлайна
+  // metadata hack (как в старом рабочем коде)
   video.addEventListener("loadedmetadata", () => {
     try {
       video.currentTime = 0.001;
       video.currentTime = 0;
-    } catch (e) {}
+    } catch {}
   });
 
-  // play / pause → наружу (viewer.js управляет UI)
-video.addEventListener("play", () => {
-  isPlaying = true;
-  if (onPlayCb) onPlayCb();
-});
+  video.addEventListener("play", () => {
+    if (onPlayCb) onPlayCb();
+  });
 
-video.addEventListener("pause", () => {
-  isPlaying = false;
-  if (onPauseCb) onPauseCb();
-});
-// свайп листает видео-карточки ТОЛЬКО когда:
-// - режим активен
-// - видео НЕ играет
-// - видео больше одного
-video.addEventListener("touchstart", (e) => {
-  if (!active) return;
-  if (isPlaying) return;
-  if (!videoList || videoList.length <= 1) return;
-  if (e.touches.length !== 1) return;
+  video.addEventListener("pause", () => {
+    if (onPauseCb) onPauseCb();
+  });
 
-  const t = e.touches[0];
-  swipeStartX = t.clientX;
-  swipeStartY = t.clientY;
-}, { passive: true });
-
-video.addEventListener("touchend", (e) => {
-  if (!active) return;
-  if (isPlaying) return;
-  if (!videoList || videoList.length <= 1) return;
-
-  const t = e.changedTouches && e.changedTouches[0];
-  if (!t) return;
-
-  const dx = t.clientX - swipeStartX;
-  const dy = t.clientY - swipeStartY;
-
-  // горизонтальный свайп
-  if (Math.abs(dx) <= Math.abs(dy)) return;
-
-  const TH = 50; // порог
-  if (dx < -TH) nextVideo();   // влево
-  if (dx > TH) prevVideo();    // вправо
-}, { passive: true });
-
+  overlayEl.innerHTML = "";
+  overlayEl.appendChild(video);
 }
 
 /* ============================================================
-   ЗАГРУЗКА ВИДЕО ЧЕРЕЗ BLOB
+   BLOB LOADER (СТАРЫЙ, РАБОЧИЙ)
    ============================================================ */
 
-export async function loadVideo(url) {
+async function loadVideoBlob(url) {
   if (!video) return;
 
+  // чистим прошлый blob
   if (currentBlobUrl) {
     URL.revokeObjectURL(currentBlobUrl);
     currentBlobUrl = null;
-  }
-
-  if (!url) {
-    video.removeAttribute("src");
-    video.load();
-    return;
   }
 
   try {
@@ -122,47 +85,54 @@ export async function loadVideo(url) {
 
     video.src = objUrl;
     video.load();
-  } catch (err) {
-    console.error("Ошибка загрузки видео:", err);
-    video.removeAttribute("src");
-    video.load();
+  } catch (e) {
+    console.error("video load failed", e);
   }
 }
 
 /* ============================================================
-   АКТИВАЦИЯ / ДЕАКТИВАЦИЯ
+   LIST / CARDS
+   ============================================================ */
+
+export function setVideoList(list) {
+  videoList = Array.isArray(list) ? list : [];
+
+  listEl.innerHTML = "";
+
+  if (!videoList.length) {
+    if (emptyEl) emptyEl.style.display = "block";
+    return;
+  }
+
+  if (emptyEl) emptyEl.style.display = "none";
+
+  videoList.forEach((url, idx) => {
+    const card = document.createElement("div");
+    card.className = "video-card";
+    card.textContent = `Видео ${idx + 1}`;
+
+    card.addEventListener("click", async () => {
+      if (!active) return;
+
+      await loadVideoBlob(url);
+
+      try {
+        await video.play();
+      } catch (e) {
+        console.warn("play blocked", e);
+      }
+    });
+
+    listEl.appendChild(card);
+  });
+}
+
+/* ============================================================
+   ACTIVATE / DEACTIVATE
    ============================================================ */
 
 export function activateVideo() {
   active = true;
-}
-
-export function setVideoList(list) {
-  videoList = Array.isArray(list) ? list : (list ? [list] : []);
-  videoIndex = 0;
-
-  if (!videoList.length) {
-    loadVideo(null);
-    return;
-  }
-
-  loadVideo(videoList[videoIndex]);
-}
-
-export function nextVideo() {
-  if (isPlaying) return;
-  if (!videoList || videoList.length <= 1) return;
-
-  videoIndex = (videoIndex + 1) % videoList.length;
-  loadVideo(videoList[videoIndex]);
-}
-
-export function prevVideo() {
-  if (isPlaying) return;
-  if (!videoList || videoList.length <= 1) return;
-
-  videoIndex = (videoIndex - 1 + videoList.length) % videoList.length;
-  loadVideo(videoList[videoIndex]);
 }
 
 export function deactivateVideo() {
@@ -171,4 +141,12 @@ export function deactivateVideo() {
   if (video && !video.paused) {
     video.pause();
   }
+
+  if (currentBlobUrl) {
+    URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = null;
+  }
+
+  video.removeAttribute("src");
+  video.load();
 }
