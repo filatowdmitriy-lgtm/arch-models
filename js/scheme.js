@@ -22,6 +22,10 @@
 
 import { cachedFetch } from "./cache/cachedFetch.js";
 let currentSchemeBlobUrl = null;
+let preloadedScheme = {
+  index: null,
+  blobUrl: null
+};
 
 let overlay = null;
 let img = null;
@@ -118,17 +122,46 @@ async function loadSchemeAtIndex(index) {
   }
 
   try {
-    const blob = await cachedFetch(images[index]);
-    const blobUrl = URL.createObjectURL(blob);
-    currentSchemeBlobUrl = blobUrl;
-     activeIndex = index;
-    img.src = blobUrl;
+    // если схема уже предзагружена — используем её
+if (preloadedScheme.index === index && preloadedScheme.blobUrl) {
+  currentSchemeBlobUrl = preloadedScheme.blobUrl;
+  preloadedScheme.index = null;
+  preloadedScheme.blobUrl = null;
+} else {
+  const blob = await cachedFetch(images[index]);
+  currentSchemeBlobUrl = URL.createObjectURL(blob);
+}
+
+activeIndex = index;
+img.src = currentSchemeBlobUrl;
+
+// preload следующей схемы
+preloadScheme((index + 1) % images.length);
   } catch (err) {
     console.error("Scheme load failed:", images[index], err);
   }
 }
 
+async function preloadScheme(index) {
+  if (!images[index]) return;
+  if (preloadedScheme.index === index) return;
 
+  // освобождаем предыдущий preload
+  if (preloadedScheme.blobUrl) {
+    URL.revokeObjectURL(preloadedScheme.blobUrl);
+    preloadedScheme.blobUrl = null;
+  }
+
+  try {
+    const blob = await cachedFetch(images[index]);
+    const blobUrl = URL.createObjectURL(blob);
+
+    preloadedScheme.index = index;
+    preloadedScheme.blobUrl = blobUrl;
+  } catch (err) {
+    console.warn("Scheme preload failed:", images[index], err);
+  }
+}
 
 
 /* ============================================================
@@ -148,6 +181,11 @@ export function deactivateScheme() {
     URL.revokeObjectURL(currentSchemeBlobUrl);
     currentSchemeBlobUrl = null;
   }
+  if (preloadedScheme.blobUrl) {
+  URL.revokeObjectURL(preloadedScheme.blobUrl);
+  preloadedScheme.blobUrl = null;
+  preloadedScheme.index = null;
+}
 }
 
 
