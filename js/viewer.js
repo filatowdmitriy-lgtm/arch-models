@@ -64,7 +64,7 @@ export function initViewer(refs) {
   // tab3dBtn, tabSchemeBtn, tabVideoBtn,
   // canvasEl,
   // schemeOverlayEl, schemeImgEl,
- // videoOverlayEl, videoListEl, videoEmptyEl, // CHANGED
+  // videoOverlayEl, videoEl,
   // loadingEl, loadingTextEl, progressBarEl,
   // statusEl
   dom = { ...refs };
@@ -91,36 +91,17 @@ if (!dom.viewerToolbarEl) {
       setUiHidden(hidden);
     }
   });
-console.log(
-  "VIDEO REFS:",
-  dom.videoOverlayEl,
-  dom.videoListEl,
-  dom.videoEmptyEl
-);
 
-initVideo({
-  overlayEl: dom.videoOverlayEl,
-  listEl: dom.videoListEl,
-  emptyEl: dom.videoEmptyEl
-}, ...);
-
-initVideo( // CHANGED
-  {
-    overlayEl: dom.videoOverlayEl, // ADDED
-    listEl: dom.videoListEl,       // ADDED
-    emptyEl: dom.videoEmptyEl      // ADDED
+initVideo(dom.videoEl, {
+  onPlay: () => {
+    setUiHidden(true);
+    document.body.classList.add("video-playing");
   },
-  {
-    onPlay: () => {
-      setUiHidden(true);
-      document.body.classList.add("video-playing");
-    },
-    onPause: () => {
-      setUiHidden(false);
-      document.body.classList.remove("video-playing");
-    }
+  onPause: () => {
+    setUiHidden(false);
+    document.body.classList.remove("video-playing");
   }
-);
+});
 
 // Навешиваем обработчики UI
 setupUiHandlers();
@@ -222,21 +203,15 @@ tabVideoBtn.addEventListener("click", () => {
    ГЛОБАЛЬНЫЙ BLOCK touchmove (как в 8.html)
    =============================== */
 
-function setupGlobalTouchBlock() { // CHANGED
+function setupGlobalTouchBlock() {
   const { viewerWrapperEl } = dom;
 
   document.addEventListener(
     "touchmove",
     (e) => {
-      if (!viewerWrapperEl || !viewerWrapperEl.classList.contains("visible")) return;
-
-      // ADDED: В режиме "Видео" (и когда не fullscreen) даём нативный вертикальный скролл внутри #videoOverlay
-      if (activeView === "video" && !document.body.classList.contains("video-playing")) {
-        const inVideoOverlay = e.target && e.target.closest && e.target.closest("#videoOverlay");
-        if (inVideoOverlay) return; // не блокируем — пусть скроллится список
+      if (viewerWrapperEl && viewerWrapperEl.classList.contains("visible")) {
+        e.preventDefault();
       }
-
-      e.preventDefault();
     },
     { passive: false }
   );
