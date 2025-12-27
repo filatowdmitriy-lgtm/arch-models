@@ -486,7 +486,7 @@ if (touchMode === "swipe" && e.touches.length === 1) {
     }
   }, { passive: false });
 
-  window.addEventListener("touchend", (e) => {
+  window.addEventListener("touchend", async (e) => {
     if (!active) return;
 
     // === ADDED: swipe-follow snap / change on touchend ===
@@ -500,14 +500,8 @@ if (touchMode === "swipe" && e.touches.length === 1) {
         const dy = swipeEndY - swipeStartY;
 
         if (Math.abs(dx) >= 60 && Math.abs(dx) > Math.abs(dy) && images.length > 1 && userScale === 1) {
-          const rect = overlay.getBoundingClientRect();
-          const dir = dx < 0 ? 1 : -1; // влево -> next, вправо -> prev
 
-          swipeAnimating = true;
-          img.style.transition = "transform 0.22s ease-out";
-          swipeFollowX = dx < 0 ? -rect.width : rect.width;
-          applyTransform();
-
+const dir = dx < 0 ? 1 : -1;
 const nextIndex = (activeIndex + dir + images.length) % images.length;
 
 // 1️⃣ МГНОВЕННО меняем картинку (она уже preloaded)
@@ -528,23 +522,9 @@ requestAnimationFrame(() => {
   swipeFollowX = 0;
   applyTransform();
 });
+}
 
-          img.addEventListener("transitionend", onDone);
-        } else {
-          // не дотянули — возвращаемся
-          swipeAnimating = true;
-          img.style.transition = "transform 0.18s ease-out";
-          swipeFollowX = 0;
-          applyTransform();
-
-          const onBack = () => {
-            img.removeEventListener("transitionend", onBack);
-            swipeAnimating = false;
-            img.style.transition = "none";
-            applyTransform();
-          };
-          img.addEventListener("transitionend", onBack);
-        }
+        
       } else {
         // старое поведение для пан-режима (zoom > 1)
         handleSwipe();
