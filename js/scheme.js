@@ -508,18 +508,20 @@ if (touchMode === "swipe" && e.touches.length === 1) {
           swipeFollowX = dx < 0 ? -rect.width : rect.width;
           applyTransform();
 
-          const onDone = () => {
-            img.removeEventListener("transitionend", onDone);
+          const onDone = async () => {
+  img.removeEventListener("transitionend", onDone);
 
-            activeIndex = (activeIndex + dir + images.length) % images.length;
-           loadSchemeAtIndex(activeIndex);
+  activeIndex = (activeIndex + dir + images.length) % images.length;
 
+  // 🔹 СНАЧАЛА меняем картинку (она уже preloaded)
+  await loadSchemeAtIndex(activeIndex);
 
-
-            swipeFollowX = 0;
-            swipeAnimating = false;
-            img.style.transition = "none";
-          };
+  // 🔹 ПОТОМ сбрасываем transform
+  swipeFollowX = 0;
+  swipeAnimating = false;
+  img.style.transition = "none";
+  applyTransform();
+};
 
           img.addEventListener("transitionend", onDone);
         } else {
