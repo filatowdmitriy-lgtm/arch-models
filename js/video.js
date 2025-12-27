@@ -14,13 +14,6 @@ let currentBlobUrl = null;
 let active = false;
 let onPlayCb = null;
 let onPauseCb = null;
-let videoList = [];
-let videoIndex = 0;
-let isPlaying = false;
-
-// свайп
-let swipeStartX = 0;
-let swipeStartY = 0;
 
 /* ============================================================
    ИНИЦИАЛИЗАЦИЯ
@@ -50,49 +43,13 @@ export function initVideo(videoElement, callbacks = {}) {
   });
 
   // play / pause → наружу (viewer.js управляет UI)
-video.addEventListener("play", () => {
-  isPlaying = true;
-  if (onPlayCb) onPlayCb();
-});
+  video.addEventListener("play", () => {
+    if (onPlayCb) onPlayCb();
+  });
 
-video.addEventListener("pause", () => {
-  isPlaying = false;
-  if (onPauseCb) onPauseCb();
-});
-// свайп листает видео-карточки ТОЛЬКО когда:
-// - режим активен
-// - видео НЕ играет
-// - видео больше одного
-video.addEventListener("touchstart", (e) => {
-  if (!active) return;
-  if (isPlaying) return;
-  if (!videoList || videoList.length <= 1) return;
-  if (e.touches.length !== 1) return;
-
-  const t = e.touches[0];
-  swipeStartX = t.clientX;
-  swipeStartY = t.clientY;
-}, { passive: true });
-
-video.addEventListener("touchend", (e) => {
-  if (!active) return;
-  if (isPlaying) return;
-  if (!videoList || videoList.length <= 1) return;
-
-  const t = e.changedTouches && e.changedTouches[0];
-  if (!t) return;
-
-  const dx = t.clientX - swipeStartX;
-  const dy = t.clientY - swipeStartY;
-
-  // горизонтальный свайп
-  if (Math.abs(dx) <= Math.abs(dy)) return;
-
-  const TH = 50; // порог
-  if (dx < -TH) nextVideo();   // влево
-  if (dx > TH) prevVideo();    // вправо
-}, { passive: true });
-
+  video.addEventListener("pause", () => {
+    if (onPauseCb) onPauseCb();
+  });
 }
 
 /* ============================================================
@@ -135,34 +92,6 @@ export async function loadVideo(url) {
 
 export function activateVideo() {
   active = true;
-}
-
-export function setVideoList(list) {
-  videoList = Array.isArray(list) ? list : (list ? [list] : []);
-  videoIndex = 0;
-
-  if (!videoList.length) {
-    loadVideo(null);
-    return;
-  }
-
-  loadVideo(videoList[videoIndex]);
-}
-
-export function nextVideo() {
-  if (isPlaying) return;
-  if (!videoList || videoList.length <= 1) return;
-
-  videoIndex = (videoIndex + 1) % videoList.length;
-  loadVideo(videoList[videoIndex]);
-}
-
-export function prevVideo() {
-  if (isPlaying) return;
-  if (!videoList || videoList.length <= 1) return;
-
-  videoIndex = (videoIndex - 1 + videoList.length) % videoList.length;
-  loadVideo(videoList[videoIndex]);
 }
 
 export function deactivateVideo() {
