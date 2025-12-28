@@ -73,6 +73,7 @@ function warmCache(url) {
   } catch (e) {}
 }
 async function loadVideoToElement(videoEl, srcUrl) {
+  console.log("[loadVideoToElement]", { videoEl, url });
   if (!videoEl) return;
   // ✅ если уже стоит blob: URL — не перезагружаем
   try {
@@ -85,7 +86,8 @@ if (videoEl.__blobUrl) {
 }
 
 
-  if (!url) {
+if (!url || typeof url !== "string") {
+
     videoEl.removeAttribute("src");
     videoEl.load();
     return;
