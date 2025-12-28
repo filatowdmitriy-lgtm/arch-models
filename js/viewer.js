@@ -98,11 +98,6 @@ console.log(
   dom.videoEmptyEl
 );
 
-initVideo({
-  overlayEl: dom.videoOverlayEl,
-  listEl: dom.videoListEl,
-  emptyEl: dom.videoEmptyEl
-}, ...);
 
 initVideo( // CHANGED
   {
