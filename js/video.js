@@ -1,34 +1,44 @@
 // js/video.js
 //
-// CHANGED: новый UX видео:
+// Видео-вкладка (карточки):
 // - список карточек (вертикальный скролл)
-// - play на карточке -> fullscreen (как раньше), скрываем остальные
+// - play на карточке -> fullscreen (через viewer.js), скрываем остальные
 // - pause -> возвращаем список в тот же scrollTop
 //
-// НЕ трогаем: Telegram-логику, viewer.js вкладки, кэш-логику в cachedFetch.js (мы её только вызываем для прогрева).
+// iOS FIX:
+// - НЕ полагаемся на streaming/range (в iOS Telegram часто "зачёркнут play")
+// - грузим каждый ролик в blob заранее (очередью), потом даём controls
+//
+// НЕ трогаем: Telegram-логику, viewer.js вкладки, cachedFetch.js (используем только как прогрев).
 
-import { cachedFetch } from "./cache/cachedFetch.js"; // ADDED (прогрев IDB-кэша)
+import { cachedFetch } from "./cache/cachedFetch.js";
 
+/* ===============================
+   STATE
+   =============================== */
 
-let overlayEl = null; // ADDED
-let listEl = null;    // ADDED
-let emptyEl = null;   // ADDED
+let overlayEl = null;
+let listEl = null;
+let emptyEl = null;
 
 let active = false;
 let onPlayCb = null;
 let onPauseCb = null;
 
 let videoList = [];
-let cards = []; // { wrap, video, url }
+let cards = []; // { wrap, video, url, blobUrl, blobState }
 let activeCard = null;
-
 let savedScrollTop = 0;
 
-// ============================================================
-// INIT
-// ============================================================
+// очередь blob-загрузок, чтобы не убить сеть
+let blobQueue = [];
+let blobLoading = false;
 
-export function initVideo(refs, callbacks = {}) { // CHANGED signature
+/* ===============================
+   INIT
+   =============================== */
+
+export function initVideo(refs, callbacks = {}) {
   overlayEl = refs?.overlayEl || null;
   listEl = refs?.listEl || null;
   emptyEl = refs?.emptyEl || null;
@@ -41,18 +51,20 @@ export function initVideo(refs, callbacks = {}) { // CHANGED signature
     return;
   }
 
-  // на всякий: чистим
+  // чистим
   listEl.innerHTML = "";
   cards = [];
   activeCard = null;
+
+  blobQueue = [];
+  blobLoading = false;
 }
 
-// ============================================================
-// HELPERS
-// ============================================================
+/* ===============================
+   HELPERS
+   =============================== */
 
 function withInitData(url) {
-  // ADDED: как в models.js, но для видео
   try {
     if (!window.TG_INIT_DATA) return url;
     const u = new URL(url);
@@ -66,55 +78,17 @@ function withInitData(url) {
 }
 
 function warmCache(url) {
-  // ADDED: прогреваем IndexedDB-кэш, НЕ ломая streaming.
-  // Видео играет по обычному src (быстро), а cachedFetch параллельно сохранит blob в IDB.
   try {
     cachedFetch(url).catch(() => {});
   } catch (e) {}
-}
-async function loadVideoToElement(videoEl, srcUrl) {
- console.log("[loadVideoToElement]", { videoEl, srcUrl });
-  if (!videoEl) return;
-  // ✅ если уже стоит blob: URL — не перезагружаем
-  try {
-    if (videoEl.src && videoEl.src.startsWith("blob:")) return;
-  } catch (e) {}
-
-if (videoEl.__blobUrl) {
-  URL.revokeObjectURL(videoEl.__blobUrl);
-  videoEl.__blobUrl = null;
-}
-
-
-if (!srcUrl || typeof srcUrl !== "string") {
-
-    videoEl.removeAttribute("src");
-    videoEl.load();
-    return;
-  }
-
-  try {
-    const resp = await fetch(srcUrl);
-    const blob = await resp.blob();
-
-const objUrl = URL.createObjectURL(blob);
-videoEl.__blobUrl = objUrl;
-
-videoEl.src = objUrl;
-videoEl.load();
-
-    videoEl.controls = true; // ✅ теперь кнопка play активна
-  } catch (err) {
-    console.error("Ошибка загрузки видео:", err);
-    videoEl.removeAttribute("src");
-    videoEl.load();
-  }
 }
 
 function stopAllExcept(exceptVideoEl) {
   cards.forEach((c) => {
     if (c.video !== exceptVideoEl) {
       try {
+        // чтобы pause-хендлер не делал clearActive()/UI flicker
+        c.__internalPause = true;
         c.video.pause();
       } catch (e) {}
     }
@@ -126,10 +100,8 @@ function clearActive() {
 
   activeCard.wrap.classList.remove("active");
 
-  // возвращаем scroll
   if (listEl) {
     const st = savedScrollTop;
-    // microtask -> чтобы DOM успел показать список
     setTimeout(() => {
       listEl.scrollTop = st;
     }, 0);
@@ -141,97 +113,194 @@ function clearActive() {
 function setActive(card) {
   if (!card) return;
 
-  // запоминаем позицию списка
   if (listEl) savedScrollTop = listEl.scrollTop;
 
-  // делаем активной
   cards.forEach((c) => c.wrap.classList.remove("active"));
   card.wrap.classList.add("active");
   activeCard = card;
 
-  // остальные видео стопаем, чтобы не было “звуков из списка”
   stopAllExcept(card.video);
 }
 
-// ============================================================
-// RENDER LIST
-// ============================================================
+/* ===============================
+   BLOB LOADER (queue)
+   =============================== */
 
+function enqueueBlob(card) {
+  if (!card || !card.video || !card.url) return;
+
+  // already queued/loaded
+  if (card.blobState === "queued" || card.blobState === "loading" || card.blobState === "ready") return;
+
+  card.blobState = "queued";
+  blobQueue.push(card);
+  pumpBlobQueue();
+}
+
+async function pumpBlobQueue() {
+  if (blobLoading) return;
+  blobLoading = true;
+
+  while (blobQueue.length) {
+    const card = blobQueue.shift();
+    if (!card || !card.video) continue;
+
+    // если карточку уже пересоздали/удалили
+    if (!cards.includes(card)) continue;
+
+    // если уже готово — пропускаем
+    if (card.blobState === "ready") continue;
+
+    card.blobState = "loading";
+
+    try {
+      // если был старый blobUrl — чистим
+      if (card.blobUrl) {
+        try { URL.revokeObjectURL(card.blobUrl); } catch (e) {}
+        card.blobUrl = null;
+      }
+
+      const resp = await fetch(card.url);
+      const blob = await resp.blob();
+      const objUrl = URL.createObjectURL(blob);
+
+      card.blobUrl = objUrl;
+
+      // ставим blob в video
+      card.video.src = objUrl;
+      card.video.load();
+
+      // включаем контролы ТОЛЬКО когда src уже blob
+      card.video.controls = true;
+
+      card.blobState = "ready";
+    } catch (err) {
+      console.error("blob load failed:", err);
+
+      // fallback: оставим прямой url (на ПК может работать)
+      try {
+        card.video.src = card.url;
+        card.video.load();
+        card.video.controls = true;
+      } catch (e) {}
+
+      card.blobState = "error";
+    }
+  }
+
+  blobLoading = false;
+}
+
+/* ===============================
+   RENDER LIST
+   =============================== */
 
 function createCard(url) {
   const wrap = document.createElement("div");
   wrap.className = "video-card";
 
   const v = document.createElement("video");
-  v.muted = true; // ⬅️ КРИТИЧНО ДЛЯ iOS
-v.controls = false; // ❗️ВАЖНО: выключены ДО play
-  v.preload = "metadata";
+
+  // iOS/Telegram critical
   v.setAttribute("playsinline", "");
   v.setAttribute("webkit-playsinline", "");
   v.playsInline = true;
 
-  // ✅ ВАЖНО: srcUrl объявлен ДО использования
+  // ВАЖНО:
+  // пока blob не готов — controls выключены (иначе iOS рисует "зачёркнутый play")
+  v.controls = false;
+
+  // metadata нужно для таймлайна/хаков
+  v.preload = "metadata";
+
   const srcUrl = withInitData(url);
 
+  // создаём объект карточки ДО использования в обработчиках
+  const cardObj = {
+    wrap,
+    video: v,
+    url: srcUrl,
+    blobUrl: null,
+    blobState: "init",
+    __internalPause: false
+  };
 
-  // metadata hack
+  // metadata hack (как в эталоне) — чтобы таймлайн не глючил
   v.addEventListener("loadedmetadata", () => {
     try {
       v.currentTime = 0.001;
       v.currentTime = 0;
     } catch (e) {}
   });
-// ✅ blob-прогрев ОДИН раз (как эталон), но НЕ в play
-let blobWarmed = false;
-v.addEventListener(
-  "loadedmetadata",
-  () => {
-    if (blobWarmed) return;
-    blobWarmed = true;
 
-    // грузим в blob в фоне, не блокируя play
-    loadVideoToElement(v, srcUrl);
-  },
-  { passive: true }
-);
+  // Прогрев кэша (IDB) — безопасно
+  warmCache(srcUrl);
 
+  // ВАЖНО: blob грузим заранее (в фоне), чтобы на iOS play был доступен
+  enqueueBlob(cardObj);
 
-v.addEventListener("play", () => {
-  v.controls = true;   // ⬅️ ВКЛЮЧАЕМ ТОЛЬКО ПОСЛЕ play
-  v.muted = false;
+  // PLAY -> fullscreen + hide UI
+  v.addEventListener("play", () => {
+    if (!active) {
+      // если вкладка не активна — не даём проигрывать
+      try { v.pause(); } catch (e) {}
+      return;
+    }
 
-  if (!active) return;
-  setActive(cardObj);
-  if (onPlayCb) onPlayCb();
-});
+    // на iOS полезно стартовать muted -> потом снять (но без ломания)
+    // (если звук всё равно не нужен — можно убрать)
+    try {
+      if (v.muted !== false) v.muted = false;
+    } catch (e) {}
 
+    setActive(cardObj);
+    if (onPlayCb) onPlayCb();
+  });
 
-
-
-
+  // PAUSE -> вернуть список
   v.addEventListener("pause", () => {
+    // если мы сами гасили другие видео — не трогаем UI
+    if (cardObj.__internalPause) {
+      cardObj.__internalPause = false;
+      return;
+    }
+
     clearActive();
     if (onPauseCb) onPauseCb();
   });
 
   wrap.appendChild(v);
 
-  const cardObj = { wrap, video: v, url: srcUrl };
   return cardObj;
 }
 
+function destroyAllCards() {
+  // ревокаем blob-и
+  cards.forEach((c) => {
+    if (c && c.blobUrl) {
+      try { URL.revokeObjectURL(c.blobUrl); } catch (e) {}
+      c.blobUrl = null;
+    }
+    if (c && c.video) {
+      try { c.video.pause(); } catch (e) {}
+      try { c.video.removeAttribute("src"); c.video.load(); } catch (e) {}
+    }
+  });
+
+  cards = [];
+  activeCard = null;
+  blobQueue = [];
+  blobLoading = false;
+}
 
 function render() {
   if (!listEl) return;
 
   listEl.innerHTML = "";
-  cards = [];
-  activeCard = null;
+  destroyAllCards();
 
   const has = Array.isArray(videoList) && videoList.length > 0;
-
   if (emptyEl) emptyEl.style.display = has ? "none" : "block";
-
   if (!has) return;
 
   videoList.forEach((url) => {
@@ -241,9 +310,9 @@ function render() {
   });
 }
 
-// ============================================================
-// PUBLIC API (как было по именам)
-// ============================================================
+/* ===============================
+   PUBLIC API
+   =============================== */
 
 export function activateVideo() {
   active = true;
@@ -257,12 +326,13 @@ export function setVideoList(list) {
 export function deactivateVideo() {
   active = false;
 
-  // гасим fullscreen-класс (viewer.js тоже снимает, но пусть будет дубль безопасно)
-  document.body.classList.remove("video-playing"); // ADDED
+  // на всякий гасим fullscreen-класс
+  document.body.classList.remove("video-playing");
 
   // пауза всех
   cards.forEach((c) => {
     try {
+      c.__internalPause = true;
       c.video.pause();
     } catch (e) {}
   });
