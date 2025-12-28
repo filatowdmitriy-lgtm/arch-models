@@ -73,7 +73,7 @@ function warmCache(url) {
   } catch (e) {}
 }
 async function loadVideoToElement(videoEl, srcUrl) {
-  console.log("[loadVideoToElement]", { videoEl, url });
+ console.log("[loadVideoToElement]", { videoEl, srcUrl });
   if (!videoEl) return;
   // ✅ если уже стоит blob: URL — не перезагружаем
   try {
@@ -86,7 +86,7 @@ if (videoEl.__blobUrl) {
 }
 
 
-if (!url || typeof url !== "string") {
+if (!srcUrl || typeof srcUrl !== "string") {
 
     videoEl.removeAttribute("src");
     videoEl.load();
@@ -163,8 +163,8 @@ function createCard(url) {
   wrap.className = "video-card";
 
   const v = document.createElement("video");
-  v.controls = true;
-  v.controls = false; // ⛔ блокируем play, пока blob не готов
+  v.muted = true; // ⬅️ КРИТИЧНО ДЛЯ iOS
+v.controls = false; // ❗️ВАЖНО: выключены ДО play
   v.preload = "metadata";
   v.setAttribute("playsinline", "");
   v.setAttribute("webkit-playsinline", "");
@@ -172,8 +172,6 @@ function createCard(url) {
 
   // ✅ ВАЖНО: srcUrl объявлен ДО использования
   const srcUrl = withInitData(url);
-  loadVideoToElement(v, srcUrl); // ⬅️ blob как в эталоне
-warmCache(srcUrl);            // ⬅️ просто прогрев, не влияет на play
 
 
   // metadata hack
@@ -199,11 +197,15 @@ v.addEventListener(
 
 
 v.addEventListener("play", () => {
-  if (!active) return;
+  v.controls = true;   // ⬅️ ВКЛЮЧАЕМ ТОЛЬКО ПОСЛЕ play
+  v.muted = false;
 
+  if (!active) return;
   setActive(cardObj);
   if (onPlayCb) onPlayCb();
 });
+
+
 
 
 
