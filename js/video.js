@@ -73,8 +73,12 @@ function warmCache(url) {
     cachedFetch(url).catch(() => {});
   } catch (e) {}
 }
-async function loadVideoToElement(videoEl, url) {
+async function loadVideoToElement(videoEl, srcUrl) {
   if (!videoEl) return;
+  // ✅ если уже стоит blob: URL — не перезагружаем
+  try {
+    if (videoEl.src && videoEl.src.startsWith("blob:")) return;
+  } catch (e) {}
 
   if (currentBlobUrl) {
     URL.revokeObjectURL(currentBlobUrl);
@@ -88,7 +92,7 @@ async function loadVideoToElement(videoEl, url) {
   }
 
   try {
-    const resp = await fetch(url);
+    const resp = await fetch(srcUrl);
     const blob = await resp.blob();
 
     const objUrl = URL.createObjectURL(blob);
@@ -163,6 +167,7 @@ function createCard(url) {
 
   // ✅ ВАЖНО: srcUrl объявлен ДО использования
   const srcUrl = withInitData(url);
+  v.src = srcUrl;
 
   // metadata hack
   v.addEventListener("loadedmetadata", () => {
@@ -171,6 +176,19 @@ function createCard(url) {
       v.currentTime = 0;
     } catch (e) {}
   });
+// ✅ blob-прогрев ОДИН раз (как эталон), но НЕ в play
+let blobWarmed = false;
+v.addEventListener(
+  "loadedmetadata",
+  () => {
+    if (blobWarmed) return;
+    blobWarmed = true;
+
+    // грузим в blob в фоне, не блокируя play
+    loadVideoToElement(v, srcUrl);
+  },
+  { passive: true }
+);
 
   // прогрев кеша
   let warmed = false;
@@ -180,18 +198,16 @@ function createCard(url) {
     warmCache(srcUrl);
   };
 
+
   v.addEventListener("loadeddata", warmOnce, { passive: true });
   v.addEventListener("play", warmOnce, { passive: true });
-v.addEventListener("play", async () => {
+v.addEventListener("play", () => {
   if (!active) return;
 
-  // ⬅️ КЛЮЧЕВО: грузим через blob КАК В ЭТАЛОНЕ
-  await loadVideoToElement(v, srcUrl);
-
   setActive(cardObj);
-
   if (onPlayCb) onPlayCb();
 });
+
 
 
   v.addEventListener("pause", () => {
