@@ -220,21 +220,26 @@ tabVideoBtn.addEventListener("click", () => {
 function setupGlobalTouchBlock() { // CHANGED
   const { viewerWrapperEl } = dom;
 
-  document.addEventListener(
-    "touchmove",
-    (e) => {
-      if (!viewerWrapperEl || !viewerWrapperEl.classList.contains("visible")) return;
+document.addEventListener(
+  "touchmove",
+  (e) => {
+    if (!viewerWrapperEl || !viewerWrapperEl.classList.contains("visible")) return;
 
-      // ADDED: В режиме "Видео" (и когда не fullscreen) даём нативный вертикальный скролл внутри #videoOverlay
-      if (activeView === "video" && !document.body.classList.contains("video-playing")) {
-        const inVideoOverlay = e.target && e.target.closest && e.target.closest("#videoOverlay");
-        if (inVideoOverlay) return; // не блокируем — пусть скроллится список
-      }
+    // ❗ НИКОГДА не блокируем нативные события video
+    if (e.target && e.target.closest && e.target.closest("video")) {
+      return;
+    }
 
-      e.preventDefault();
-    },
-    { passive: false }
-  );
+    // В режиме видео и НЕ fullscreen — разрешаем скролл списка
+    if (activeView === "video" && !document.body.classList.contains("video-playing")) {
+      const inVideoOverlay = e.target.closest("#videoOverlay");
+      if (inVideoOverlay) return;
+    }
+
+    e.preventDefault();
+  },
+  { passive: false }
+);
 }
 
 /* ===============================
