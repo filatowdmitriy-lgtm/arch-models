@@ -71,6 +71,12 @@ playerVideo.addEventListener("pause", () => {
 
 // добавляем поверх списка
 overlayEl.appendChild(playerVideo);
+playerVideo.style.display = "none";
+playerVideo.style.width = "100%";
+playerVideo.style.aspectRatio = "16 / 9";
+playerVideo.style.background = "#000";
+playerVideo.style.borderRadius = "12px";
+playerVideo.style.overflow = "hidden";
 
 }
 
@@ -114,23 +120,25 @@ async function playVideoFromCard(url, cardObj) {
     currentBlobUrl = null;
   }
 
-  try {
-    const resp = await fetch(srcUrl);
-    const blob = await resp.blob();
-    const objUrl = URL.createObjectURL(blob);
-    currentBlobUrl = objUrl;
+try {
+  // 1️⃣ СРАЗУ ставим src (обычный URL)
+  playerVideo.src = srcUrl;
 
-    playerVideo.src = objUrl;
-    playerVideo.load();
+  // 2️⃣ СРАЗУ play — БЕЗ await fetch перед этим
+  const playPromise = playerVideo.play();
 
-    // ключевое: play
-    await playerVideo.play();
+  // 3️⃣ Уже ПОСЛЕ play — греем кэш / blob (НЕ блокирует)
+  warmCache(srcUrl);
 
-    // необязательно, но пусть греет кэш параллельно
-    warmCache(srcUrl);
-  } catch (e) {
-    console.error("playVideoFromCard failed:", e);
+  if (playPromise && typeof playPromise.catch === "function") {
+    playPromise.catch((e) => {
+      console.warn("play() rejected:", e);
+    });
   }
+} catch (e) {
+  console.error("playVideoFromCard failed:", e);
+}
+
 }
 
 
@@ -171,6 +179,13 @@ function setActive(card) {
 function createCard(url) {
   const wrap = document.createElement("div");
   wrap.className = "video-card";
+  // чтобы карточка была видимой даже если внутри пусто
+wrap.style.width = "100%";
+wrap.style.aspectRatio = "16 / 9";
+wrap.style.background = "#000";
+wrap.style.borderRadius = "12px";
+wrap.style.overflow = "hidden";
+
 
 wrap.addEventListener("click", () => {
   if (!active) return;
@@ -224,6 +239,10 @@ export function deactivateVideo() {
     playerVideo.removeAttribute("src");
     playerVideo.load();
   }
+  if (playerVideo) {
+  playerVideo.style.display = "none";
+}
+
 
   if (currentBlobUrl) {
     URL.revokeObjectURL(currentBlobUrl);
