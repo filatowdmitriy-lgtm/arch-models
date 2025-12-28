@@ -8,6 +8,8 @@
 // НЕ трогаем: Telegram-логику, viewer.js вкладки, кэш-логику в cachedFetch.js (мы её только вызываем для прогрева).
 
 import { cachedFetch } from "./cache/cachedFetch.js"; // ADDED (прогрев IDB-кэша)
+let currentBlobUrl = null;
+
 
 let overlayEl = null; // ADDED
 let listEl = null;    // ADDED
@@ -71,6 +73,35 @@ function warmCache(url) {
     cachedFetch(url).catch(() => {});
   } catch (e) {}
 }
+async function loadVideoToElement(videoEl, url) {
+  if (!videoEl) return;
+
+  if (currentBlobUrl) {
+    URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = null;
+  }
+
+  if (!url) {
+    videoEl.removeAttribute("src");
+    videoEl.load();
+    return;
+  }
+
+  try {
+    const resp = await fetch(url);
+    const blob = await resp.blob();
+
+    const objUrl = URL.createObjectURL(blob);
+    currentBlobUrl = objUrl;
+
+    videoEl.src = objUrl;
+    videoEl.load();
+  } catch (err) {
+    console.error("Ошибка загрузки видео:", err);
+    videoEl.removeAttribute("src");
+    videoEl.load();
+  }
+}
 
 function stopAllExcept(exceptVideoEl) {
   cards.forEach((c) => {
@@ -132,7 +163,6 @@ function createCard(url) {
 
   // ✅ ВАЖНО: srcUrl объявлен ДО использования
   const srcUrl = withInitData(url);
-  v.src = srcUrl;
 
   // metadata hack
   v.addEventListener("loadedmetadata", () => {
@@ -152,13 +182,17 @@ function createCard(url) {
 
   v.addEventListener("loadeddata", warmOnce, { passive: true });
   v.addEventListener("play", warmOnce, { passive: true });
+v.addEventListener("play", async () => {
+  if (!active) return;
 
-  v.addEventListener("play", () => {
-    v.muted = true;
-    if (!active) return;
-    setActive(cardObj);
-    if (onPlayCb) onPlayCb();
-  });
+  // ⬅️ КЛЮЧЕВО: грузим через blob КАК В ЭТАЛОНЕ
+  await loadVideoToElement(v, srcUrl);
+
+  setActive(cardObj);
+
+  if (onPlayCb) onPlayCb();
+});
+
 
   v.addEventListener("pause", () => {
     clearActive();
