@@ -69,15 +69,6 @@ playerVideo.addEventListener("pause", () => {
   if (onPauseCb) onPauseCb();
 });
 
-// добавляем поверх списка
-overlayEl.appendChild(playerVideo);
-playerVideo.style.display = "none";
-playerVideo.style.width = "100%";
-playerVideo.style.aspectRatio = "16 / 9";
-playerVideo.style.background = "#000";
-playerVideo.style.borderRadius = "12px";
-playerVideo.style.overflow = "hidden";
-
 }
 
 // ============================================================
@@ -111,8 +102,8 @@ async function playVideoFromCard(url, cardObj) {
 
   const srcUrl = withInitData(url);
 
-  // делаем карточку активной (для скрытия остальных)
-  setActive(cardObj);
+// setActive(cardObj);
+
 
   // очищаем старый blobUrl
   if (currentBlobUrl) {
@@ -179,22 +170,25 @@ function setActive(card) {
 function createCard(url) {
   const wrap = document.createElement("div");
   wrap.className = "video-card";
-  // чтобы карточка была видимой даже если внутри пусто
-wrap.style.width = "100%";
-wrap.style.aspectRatio = "16 / 9";
-wrap.style.background = "#000";
-wrap.style.borderRadius = "12px";
-wrap.style.overflow = "hidden";
 
+  // визуал, чтобы карточка была видна
+  wrap.style.width = "100%";
+  wrap.style.aspectRatio = "16 / 9";
+  wrap.style.background = "#000";
+  wrap.style.borderRadius = "12px";
+  wrap.style.overflow = "hidden";
 
-wrap.addEventListener("click", () => {
-  if (!active) return;
-  playVideoFromCard(url, cardObj);
-});
-
+  // ⬅️ ВАЖНО: cardObj создаём ДО addEventListener
   const cardObj = { wrap, url };
+
+  wrap.addEventListener("click", () => {
+    if (!active) return;
+    playVideoFromCard(url, cardObj);
+  });
+
   return cardObj;
 }
+
 
 function render() {
   if (!listEl) return;
@@ -222,6 +216,7 @@ function render() {
 
 export function activateVideo() {
   active = true;
+   console.log("[video] activateVideo");
 }
 
 export function setVideoList(list) {
