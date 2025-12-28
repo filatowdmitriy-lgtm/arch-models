@@ -76,6 +76,7 @@ playerVideo.preload = "metadata";
 playerVideo.setAttribute("playsinline", "");
 playerVideo.setAttribute("webkit-playsinline", "");
 playerVideo.playsInline = true;
+playerVideo.muted = true;
 
 // metadata hack — КРИТИЧНО для Telegram iOS
 playerVideo.addEventListener("loadedmetadata", () => {
@@ -87,10 +88,16 @@ playerVideo.addEventListener("loadedmetadata", () => {
 
 // play / pause → viewer
 playerVideo.addEventListener("play", () => {
+  // 🔑 iOS FIX — включаем звук ТОЛЬКО после старта
+  playerVideo.muted = false;
+
   if (onPlayCb) onPlayCb();
 });
+
 playerVideo.addEventListener("pause", () => {
+  document.body.classList.remove("video-playing");
   if (playerHostEl) playerHostEl.style.display = "none";
+  if (listEl) listEl.style.display = "flex"; // или block, см. CSS
   if (onPauseCb) onPauseCb();
 });
 
@@ -150,9 +157,17 @@ async function playVideoFromCard(url, cardObj) {
 
 try {
   // 1️⃣ СРАЗУ ставим src (обычный URL)
-  if (playerHostEl) playerHostEl.style.display = "block";
+ // прячем список
+if (listEl) listEl.style.display = "none";
+
+// показываем video
+if (playerHostEl) playerHostEl.style.display = "block";
+
 
   playerVideo.src = srcUrl;
+  document.body.classList.add("video-playing");
+  // 🔑 iOS FIX — play ТОЛЬКО muted
+playerVideo.muted = true;
 
   // 2️⃣ СРАЗУ play — БЕЗ await fetch перед этим
   const playPromise = playerVideo.play();
@@ -213,7 +228,9 @@ function createCard(url) {
   // визуал, чтобы карточка была видна
   wrap.style.width = "100%";
   wrap.style.aspectRatio = "16 / 9";
-  wrap.style.background = "#000";
+ wrap.style.background = "#1f1f1f";
+wrap.style.border = "1px solid rgba(255,255,255,0.15)";
+  wrap.style.marginBottom = "12px";
   wrap.style.borderRadius = "12px";
   wrap.style.overflow = "hidden";
 
