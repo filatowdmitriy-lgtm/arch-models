@@ -8,7 +8,6 @@
 // НЕ трогаем: Telegram-логику, viewer.js вкладки, кэш-логику в cachedFetch.js (мы её только вызываем для прогрева).
 
 import { cachedFetch } from "./cache/cachedFetch.js"; // ADDED (прогрев IDB-кэша)
-let currentBlobUrl = null;
 
 
 let overlayEl = null; // ADDED
@@ -80,10 +79,11 @@ async function loadVideoToElement(videoEl, srcUrl) {
     if (videoEl.src && videoEl.src.startsWith("blob:")) return;
   } catch (e) {}
 
-  if (currentBlobUrl) {
-    URL.revokeObjectURL(currentBlobUrl);
-    currentBlobUrl = null;
-  }
+if (videoEl.__blobUrl) {
+  URL.revokeObjectURL(videoEl.__blobUrl);
+  videoEl.__blobUrl = null;
+}
+
 
   if (!url) {
     videoEl.removeAttribute("src");
@@ -95,11 +95,13 @@ async function loadVideoToElement(videoEl, srcUrl) {
     const resp = await fetch(srcUrl);
     const blob = await resp.blob();
 
-    const objUrl = URL.createObjectURL(blob);
-    currentBlobUrl = objUrl;
+const objUrl = URL.createObjectURL(blob);
+videoEl.__blobUrl = objUrl;
 
-    videoEl.src = objUrl;
-    videoEl.load();
+videoEl.src = objUrl;
+videoEl.load();
+
+    videoEl.controls = true; // ✅ теперь кнопка play активна
   } catch (err) {
     console.error("Ошибка загрузки видео:", err);
     videoEl.removeAttribute("src");
@@ -160,6 +162,7 @@ function createCard(url) {
 
   const v = document.createElement("video");
   v.controls = true;
+  v.controls = false; // ⛔ блокируем play, пока blob не готов
   v.preload = "metadata";
   v.setAttribute("playsinline", "");
   v.setAttribute("webkit-playsinline", "");
@@ -167,7 +170,9 @@ function createCard(url) {
 
   // ✅ ВАЖНО: srcUrl объявлен ДО использования
   const srcUrl = withInitData(url);
-  v.src = srcUrl;
+  loadVideoToElement(v, srcUrl); // ⬅️ blob как в эталоне
+warmCache(srcUrl);            // ⬅️ просто прогрев, не влияет на play
+
 
   // metadata hack
   v.addEventListener("loadedmetadata", () => {
@@ -190,17 +195,7 @@ v.addEventListener(
   { passive: true }
 );
 
-  // прогрев кеша
-  let warmed = false;
-  const warmOnce = () => {
-    if (warmed) return;
-    warmed = true;
-    warmCache(srcUrl);
-  };
 
-
-  v.addEventListener("loadeddata", warmOnce, { passive: true });
-  v.addEventListener("play", warmOnce, { passive: true });
 v.addEventListener("play", () => {
   if (!active) return;
 
