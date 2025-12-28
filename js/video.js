@@ -129,28 +129,10 @@ v.preload = "none";
   v.setAttribute("playsinline", "");
   v.setAttribute("webkit-playsinline", "");
   v.playsInline = true;
-  v.addEventListener("click", async () => {
-  if (!active) return;
-
-  // если src ещё не назначен — назначаем ТОЛЬКО сейчас
-  if (!v.src) {
-    const srcUrl = withInitData(url);
-    v.src = srcUrl;
-  }
-
-  try {
-    await v.play();
-  } catch (e) {
-    // iOS может кинуть ошибку — это ок
-    console.warn("video play failed", e);
-  }
-
-  setActive(cardObj);
-  if (onPlayCb) onPlayCb();
-});
 
 
   const srcUrl = withInitData(url);
+  v.src = srcUrl;
 
   // metadata hack (как было) — чтобы таймлайн в Telegram не глючил
   v.addEventListener("loadedmetadata", () => {
@@ -159,6 +141,13 @@ v.preload = "none";
       v.currentTime = 0;
     } catch (e) {}
   });
+  v.addEventListener("play", () => {
+  if (!active) return;
+
+  setActive(cardObj);
+  if (onPlayCb) onPlayCb();
+});
+
 
   // прогрев кэша (один раз, когда браузер хоть что-то начал грузить)
   let warmed = false;
