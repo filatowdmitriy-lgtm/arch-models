@@ -129,8 +129,6 @@ function createCard(url) {
   v.setAttribute("webkit-playsinline", "");
   v.playsInline = true;
 
-  const srcUrl = withInitData(url);
-  v.src = srcUrl;
 
   // metadata hack (как было) — чтобы таймлайн в Telegram не глючил
   v.addEventListener("loadedmetadata", () => {
@@ -150,15 +148,6 @@ function createCard(url) {
   v.addEventListener("loadeddata", warmOnce, { passive: true });
   v.addEventListener("play", warmOnce, { passive: true });
 
-  // PLAY -> fullscreen логика (как раньше, но для конкретной карточки)
-  v.addEventListener("play", () => {
-    if (!active) return;
-
-    setActive(cardObj);
-
-    if (onPlayCb) onPlayCb();
-  });
-
   // PAUSE -> вернуть список
   v.addEventListener("pause", () => {
     // если видео реально “выключили”, а не мы во время смены модели
@@ -169,6 +158,28 @@ function createCard(url) {
   wrap.appendChild(v);
 
   const cardObj = { wrap, video: v, url: srcUrl };
+  wrap.addEventListener("click", async () => {
+  if (!active) return;
+
+  setActive(cardObj);
+
+  // iOS-safe запуск (как в эталоне)
+  try {
+    const resp = await fetch(srcUrl);
+    const blob = await resp.blob();
+    const objUrl = URL.createObjectURL(blob);
+
+    v.src = objUrl;
+    v.load();
+
+    await v.play();
+
+    if (onPlayCb) onPlayCb();
+  } catch (e) {
+    console.error("Video play failed:", e);
+  }
+});
+
   return cardObj;
 }
 
