@@ -1,16 +1,17 @@
 // js/video.js
 //
-// FINAL STABLE VERSION (deadline-safe)
+// FINAL (stable + mobile-safe)
 //
-// Архитектура:
+// UX:
 // - список карточек (listEl)
-// - один общий video-плеер (playerVideo) внутри overlayEl
-// - click по карточке -> показываем playerVideo, скрываем listEl
-// - pause/ended -> скрываем playerVideo, возвращаем listEl + scrollTop
+// - один общий video (playerVideo) внутри overlayEl
+// - click card -> стартуем play (user gesture), и ТОЛЬКО ПОСЛЕ "playing" скрываем список
+// - pause НЕ возвращает в список (плеер остаётся)
+// - return в список: выход из fullscreen / ended / deactivateVideo
 //
-// Важно для iOS/Telegram:
-// - НЕЛЬЗЯ делать await fetch(blob) перед play() — теряется user gesture, и кнопка play становится “зачёркнутой”.
-// - Поэтому стартуем с обычного URL (быстро + работает в iOS), а cachedFetch прогревает IDB кэш параллельно.
+// Важно для Telegram iOS:
+// - НЕЛЬЗЯ делать await fetch(blob) до play()
+// - НЕЛЬЗЯ скрывать UI до фактического старта, иначе получаешь "полсекунды плеер -> чёрный экран"
 
 import { cachedFetch } from "./cache/cachedFetch.js";
 
@@ -30,10 +31,8 @@ let savedScrollTop = 0;
 let playerVideo = null;
 let isShowingPlayer = false;
 
-function isIOS() {
-  const ua = navigator.userAgent || "";
-  return /iPad|iPhone|iPod/.test(ua) || (ua.includes("Mac") && "ontouchend" in document);
-}
+let listDisplayDefault = ""; // что вернуть после hide
+let playerDisplayDefault = "block";
 
 function withInitData(url) {
   try {
@@ -71,16 +70,22 @@ export function initVideo(refs, callbacks = {}) {
     return;
   }
 
-  // очистка списка
+  // запомним как список отображается по умолчанию (flex / block / etc)
+  try {
+    listDisplayDefault = window.getComputedStyle(listEl).display || "";
+  } catch (e) {
+    listDisplayDefault = "";
+  }
+
+  // очистим список
   listEl.innerHTML = "";
   cards = [];
   activeCard = null;
 
-  // создаём ОДИН общий video-плеер
+  // пересоздадим общий плеер (чтобы не тащить старые слушатели)
   if (playerVideo && playerVideo.parentNode) {
-    try {
-      playerVideo.pause();
-    } catch (e) {}
+    try { playerVideo.pause(); } catch (e) {}
+    try { playerVideo.removeAttribute("src"); playerVideo.load(); } catch (e) {}
     playerVideo.parentNode.removeChild(playerVideo);
   }
 
@@ -91,10 +96,10 @@ export function initVideo(refs, callbacks = {}) {
   playerVideo.setAttribute("webkit-playsinline", "");
   playerVideo.playsInline = true;
 
-  // iOS safe default (потом снимем mute после старта)
+  // iOS/TG: начинаем muted, снимаем mute после старта
   playerVideo.muted = true;
 
-  // важный hack для таймлайна в TG
+  // таймлайн hack
   playerVideo.addEventListener("loadedmetadata", () => {
     try {
       playerVideo.currentTime = 0.001;
@@ -102,45 +107,57 @@ export function initVideo(refs, callbacks = {}) {
     } catch (e) {}
   });
 
-  // overlay должен быть контейнером
-  // (не ломаем твою верстку — просто подстрахуемся)
+  // overlay как контейнер
   try {
     const cs = window.getComputedStyle(overlayEl);
     if (cs.position === "static") overlayEl.style.position = "relative";
   } catch (e) {}
 
-  // стиль плеера: перекрывает весь overlay
+  // плеер покрывает весь overlay
   playerVideo.style.position = "absolute";
   playerVideo.style.inset = "0";
   playerVideo.style.width = "100%";
   playerVideo.style.height = "100%";
   playerVideo.style.background = "#000";
-  playerVideo.style.display = "none";
-  playerVideo.style.zIndex = "5";
+  playerVideo.style.zIndex = "10";
+  playerVideo.style.display = "none"; // покажем только после 'playing'
 
   overlayEl.appendChild(playerVideo);
 
-  // play -> наружу
-  playerVideo.addEventListener("play", () => {
-    // снимаем mute ПОСЛЕ того, как старт пошёл
-    // (на iOS это работает лучше, чем unmute до play)
-    try {
-      playerVideo.muted = false;
-    } catch (e) {}
+  // Когда видео реально ПОШЛО — только тогда скрываем список
+  playerVideo.addEventListener("playing", () => {
+    showPlayerHideList();
+
+    // снимаем mute после фактического старта
+    try { playerVideo.muted = false; } catch (e) {}
 
     if (onPlayCb) onPlayCb();
   });
 
-  // pause/ended -> вернуть список
-  const onStop = () => {
+  // Пауза НЕ возвращает в список (это твоя главная жалоба на ПК)
+  // Возврат делаем только при выходе из fullscreen/ended/deactivate.
+
+  playerVideo.addEventListener("ended", () => {
     hidePlayerReturnList();
     if (onPauseCb) onPauseCb();
-  };
+  });
 
-  playerVideo.addEventListener("pause", onStop);
-  playerVideo.addEventListener("ended", onStop);
+  // iOS Safari / Telegram iOS: событие выхода из fullscreen
+  playerVideo.addEventListener("webkitendfullscreen", () => {
+    hidePlayerReturnList();
+    if (onPauseCb) onPauseCb();
+  });
 
-  // стартовое состояние
+  // обычный fullscreen api (Android / desktop)
+  document.addEventListener("fullscreenchange", () => {
+    // если вышли из fullscreen — вернём список
+    if (!document.fullscreenElement && isShowingPlayer) {
+      // не трогаем если видео продолжает быть на экране как inline — но в нашем UX возвращаем список
+      hidePlayerReturnList();
+      if (onPauseCb) onPauseCb();
+    }
+  });
+
   hidePlayerReturnList(true);
 }
 
@@ -155,28 +172,32 @@ function showPlayerHideList() {
     savedScrollTop = listEl.scrollTop || 0;
   }
 
+  // скрываем список
   listEl.style.display = "none";
-  playerVideo.style.display = "block";
+
+  // показываем плеер
+  playerVideo.style.display = playerDisplayDefault;
   isShowingPlayer = true;
 }
 
 function hidePlayerReturnList(skipScrollRestore = false) {
   if (!listEl || !playerVideo) return;
 
+  // скрываем плеер
   playerVideo.style.display = "none";
-  listEl.style.display = "";
   isShowingPlayer = false;
+
+  // возвращаем список
+  listEl.style.display = listDisplayDefault || "";
 
   if (!skipScrollRestore) {
     const st = savedScrollTop;
     setTimeout(() => {
-      try {
-        listEl.scrollTop = st;
-      } catch (e) {}
+      try { listEl.scrollTop = st; } catch (e) {}
     }, 0);
   }
 
-  // снять active у карточки
+  // снимаем active у карточек
   if (activeCard?.wrap) activeCard.wrap.classList.remove("active");
   activeCard = null;
 }
@@ -195,7 +216,7 @@ function createCard(url) {
   const wrap = document.createElement("div");
   wrap.className = "video-card";
 
-  // базовый стиль, чтобы карточки точно были “видны” и кликабельны
+  // лёгкая видимость карточек (не превью, но хотя бы кликабельно)
   wrap.style.width = "100%";
   wrap.style.aspectRatio = "16 / 9";
   wrap.style.borderRadius = "12px";
@@ -205,10 +226,8 @@ function createCard(url) {
   wrap.style.marginBottom = "12px";
 
   const srcUrl = withInitData(url);
-
   const cardObj = { wrap, url, srcUrl };
 
-  // клик по карточке = запуск общего плеера
   wrap.addEventListener("click", () => {
     if (!active) return;
     playFromCard(cardObj);
@@ -217,34 +236,37 @@ function createCard(url) {
   return cardObj;
 }
 
-async function playFromCard(cardObj) {
+function playFromCard(cardObj) {
   if (!playerVideo) return;
 
   setActiveCard(cardObj);
-  showPlayerHideList();
 
   const srcUrl = cardObj.srcUrl;
 
-  // iOS/Telegram: play должен быть синхронно после user gesture.
-  // Поэтому НЕ делаем await fetch(blob) тут.
-  try {
-    playerVideo.muted = true; // iOS safe
-  } catch (e) {}
+  // КЛЮЧЕВО: НЕ скрываем список сразу.
+  // Скрываем только на событии "playing".
+  // Поэтому если play() сорвётся — UI не уйдёт в чёрный экран.
 
   try {
-    // ставим обычный URL и запускаем
+    // iOS safe: сначала muted=true
+    playerVideo.muted = true;
+
+    // ставим URL
     playerVideo.src = srcUrl;
-    playerVideo.load();
 
+    // ВАЖНО: не вызываем load() перед play() (иногда ломает user gesture в webview)
     const p = playerVideo.play();
 
-    // параллельно греем кэш (не блокирует)
+    // кэш прогреваем параллельно
     warmCache(srcUrl);
 
     if (p && typeof p.catch === "function") {
       p.catch((err) => {
         console.warn("playerVideo.play() rejected:", err);
-        // если не смогли стартануть — вернём список, чтобы UI не “завис”
+
+        // если не стартануло — убеждаемся что плеер скрыт, а список на месте
+        try { playerVideo.pause(); } catch (e) {}
+        try { playerVideo.removeAttribute("src"); playerVideo.load(); } catch (e) {}
         hidePlayerReturnList();
       });
     }
@@ -292,18 +314,11 @@ export function setVideoList(list) {
 export function deactivateVideo() {
   active = false;
 
-  // убрать fullscreen класс на всякий случай (viewer.js тоже делает)
   document.body.classList.remove("video-playing");
 
-  // остановить плеер и вернуть список
   if (playerVideo) {
-    try {
-      playerVideo.pause();
-    } catch (e) {}
-    try {
-      playerVideo.removeAttribute("src");
-      playerVideo.load();
-    } catch (e) {}
+    try { playerVideo.pause(); } catch (e) {}
+    try { playerVideo.removeAttribute("src"); playerVideo.load(); } catch (e) {}
   }
 
   hidePlayerReturnList();
