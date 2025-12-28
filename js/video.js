@@ -118,9 +118,6 @@ function setActive(card) {
 // RENDER LIST
 // ============================================================
 
-function createCard(url) {
-  const wrap = document.createElement("div");
-  wrap.className = "video-card";
 
 function createCard(url) {
   const wrap = document.createElement("div");
