@@ -9,6 +9,7 @@
 
 import { cachedFetch } from "./cache/cachedFetch.js"; // ADDED (прогрев IDB-кэша)
 let playerVideo = null;
+let playerHostEl = null;
 let currentBlobUrl = null;
 let overlayEl = null; // ADDED
 let listEl = null;    // ADDED
@@ -40,11 +41,34 @@ export function initVideo(refs, callbacks = {}) { // CHANGED signature
     console.error("initVideo: overlayEl/listEl not provided");
     return;
   }
+  // === HOST под единый video (в DOM) ===
+playerHostEl = overlayEl.querySelector("#videoPlayerHost");
+if (!playerHostEl) {
+  playerHostEl = document.createElement("div");
+  playerHostEl.id = "videoPlayerHost";
+  playerHostEl.style.width = "100%";
+  playerHostEl.style.display = "none"; // показываем только при проигрывании
+  playerHostEl.style.marginTop = "12px";
+
+  // ВАЖНО: вставляем рядом со списком, а не поверх него
+  // (иначе клики по карточкам могут пропадать)
+  listEl.insertAdjacentElement("afterend", playerHostEl);
+} else {
+  playerHostEl.style.display = "none";
+}
+
 
   // на всякий: чистим
   listEl.innerHTML = "";
   cards = [];
   activeCard = null;
+  // если раньше уже создавали video — удалим из DOM
+if (playerVideo && playerVideo.parentNode) {
+  try { playerVideo.pause(); } catch (e) {}
+  playerVideo.parentNode.removeChild(playerVideo);
+}
+playerVideo = null;
+
   // === SINGLE VIDEO PLAYER (как в рабочей версии) ===
 playerVideo = document.createElement("video");
 playerVideo.controls = true;
@@ -66,8 +90,21 @@ playerVideo.addEventListener("play", () => {
   if (onPlayCb) onPlayCb();
 });
 playerVideo.addEventListener("pause", () => {
+  if (playerHostEl) playerHostEl.style.display = "none";
   if (onPauseCb) onPauseCb();
 });
+
+// === ВСТАВЛЯЕМ video в DOM ===
+playerVideo.style.width = "100%";
+playerVideo.style.aspectRatio = "16 / 9";
+playerVideo.style.background = "#000";
+playerVideo.style.borderRadius = "12px";
+playerVideo.style.display = "block";
+
+if (playerHostEl) {
+  playerHostEl.innerHTML = "";          // на всякий
+  playerHostEl.appendChild(playerVideo);
+}
 
 }
 
@@ -113,6 +150,8 @@ async function playVideoFromCard(url, cardObj) {
 
 try {
   // 1️⃣ СРАЗУ ставим src (обычный URL)
+  if (playerHostEl) playerHostEl.style.display = "block";
+
   playerVideo.src = srcUrl;
 
   // 2️⃣ СРАЗУ play — БЕЗ await fetch перед этим
@@ -234,9 +273,10 @@ export function deactivateVideo() {
     playerVideo.removeAttribute("src");
     playerVideo.load();
   }
-  if (playerVideo) {
-  playerVideo.style.display = "none";
+if (playerHostEl) {
+  playerHostEl.style.display = "none";
 }
+
 
 
   if (currentBlobUrl) {
