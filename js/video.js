@@ -8,7 +8,8 @@
 // НЕ трогаем: Telegram-логику, viewer.js вкладки, кэш-логику в cachedFetch.js (мы её только вызываем для прогрева).
 
 import { cachedFetch } from "./cache/cachedFetch.js"; // ADDED (прогрев IDB-кэша)
-
+let playerVideo = null;
+let currentBlobUrl = null;
 let overlayEl = null; // ADDED
 let listEl = null;    // ADDED
 let emptyEl = null;   // ADDED
@@ -18,7 +19,7 @@ let onPlayCb = null;
 let onPauseCb = null;
 
 let videoList = [];
-let cards = []; // { wrap, video, url }
+let cards = []; // { wrap, url }
 let activeCard = null;
 
 let savedScrollTop = 0;
@@ -44,6 +45,33 @@ export function initVideo(refs, callbacks = {}) { // CHANGED signature
   listEl.innerHTML = "";
   cards = [];
   activeCard = null;
+  // === SINGLE VIDEO PLAYER (как в рабочей версии) ===
+playerVideo = document.createElement("video");
+playerVideo.controls = true;
+playerVideo.preload = "metadata";
+playerVideo.setAttribute("playsinline", "");
+playerVideo.setAttribute("webkit-playsinline", "");
+playerVideo.playsInline = true;
+
+// metadata hack — КРИТИЧНО для Telegram iOS
+playerVideo.addEventListener("loadedmetadata", () => {
+  try {
+    playerVideo.currentTime = 0.001;
+    playerVideo.currentTime = 0;
+  } catch (e) {}
+});
+
+// play / pause → viewer
+playerVideo.addEventListener("play", () => {
+  if (onPlayCb) onPlayCb();
+});
+playerVideo.addEventListener("pause", () => {
+  if (onPauseCb) onPauseCb();
+});
+
+// добавляем поверх списка
+overlayEl.appendChild(playerVideo);
+
 }
 
 // ============================================================
@@ -72,15 +100,39 @@ function warmCache(url) {
   } catch (e) {}
 }
 
-function stopAllExcept(exceptVideoEl) {
-  cards.forEach((c) => {
-    if (c.video !== exceptVideoEl) {
-      try {
-        c.video.pause();
-      } catch (e) {}
-    }
-  });
+async function playVideoFromCard(url, cardObj) {
+  if (!playerVideo) return;
+
+  const srcUrl = withInitData(url);
+
+  // делаем карточку активной (для скрытия остальных)
+  setActive(cardObj);
+
+  // очищаем старый blobUrl
+  if (currentBlobUrl) {
+    URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = null;
+  }
+
+  try {
+    const resp = await fetch(srcUrl);
+    const blob = await resp.blob();
+    const objUrl = URL.createObjectURL(blob);
+    currentBlobUrl = objUrl;
+
+    playerVideo.src = objUrl;
+    playerVideo.load();
+
+    // ключевое: play
+    await playerVideo.play();
+
+    // необязательно, но пусть греет кэш параллельно
+    warmCache(srcUrl);
+  } catch (e) {
+    console.error("playVideoFromCard failed:", e);
+  }
 }
+
 
 function clearActive() {
   if (!activeCard) return;
@@ -110,8 +162,6 @@ function setActive(card) {
   card.wrap.classList.add("active");
   activeCard = card;
 
-  // остальные видео стопаем, чтобы не было “звуков из списка”
-  stopAllExcept(card.video);
 }
 
 // ============================================================
@@ -122,53 +172,12 @@ function createCard(url) {
   const wrap = document.createElement("div");
   wrap.className = "video-card";
 
-  const v = document.createElement("video");
-  v.controls = true;
-  v.preload = "metadata";
-  v.setAttribute("playsinline", "");
-  v.setAttribute("webkit-playsinline", "");
-  v.playsInline = true;
+wrap.addEventListener("click", () => {
+  if (!active) return;
+  playVideoFromCard(url, cardObj);
+});
 
-  const srcUrl = withInitData(url);
-  v.src = srcUrl;
-
-  // metadata hack (как было) — чтобы таймлайн в Telegram не глючил
-  v.addEventListener("loadedmetadata", () => {
-    try {
-      v.currentTime = 0.001;
-      v.currentTime = 0;
-    } catch (e) {}
-  });
-
-  // прогрев кэша (один раз, когда браузер хоть что-то начал грузить)
-  let warmed = false;
-  const warmOnce = () => {
-    if (warmed) return;
-    warmed = true;
-    warmCache(srcUrl);
-  };
-  v.addEventListener("loadeddata", warmOnce, { passive: true });
-  v.addEventListener("play", warmOnce, { passive: true });
-
-  // PLAY -> fullscreen логика (как раньше, но для конкретной карточки)
-  v.addEventListener("play", () => {
-    if (!active) return;
-
-    setActive(cardObj);
-
-    if (onPlayCb) onPlayCb();
-  });
-
-  // PAUSE -> вернуть список
-  v.addEventListener("pause", () => {
-    // если видео реально “выключили”, а не мы во время смены модели
-    clearActive();
-    if (onPauseCb) onPauseCb();
-  });
-
-  wrap.appendChild(v);
-
-  const cardObj = { wrap, video: v, url: srcUrl };
+  const cardObj = { wrap, url };
   return cardObj;
 }
 
@@ -208,15 +217,19 @@ export function setVideoList(list) {
 export function deactivateVideo() {
   active = false;
 
-  // гасим fullscreen-класс (viewer.js тоже снимает, но пусть будет дубль безопасно)
-  document.body.classList.remove("video-playing"); // ADDED
+  document.body.classList.remove("video-playing");
 
-  // пауза всех
-  cards.forEach((c) => {
-    try {
-      c.video.pause();
-    } catch (e) {}
-  });
+  if (playerVideo) {
+    try { playerVideo.pause(); } catch (e) {}
+    playerVideo.removeAttribute("src");
+    playerVideo.load();
+  }
+
+  if (currentBlobUrl) {
+    URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = null;
+  }
 
   clearActive();
 }
+
