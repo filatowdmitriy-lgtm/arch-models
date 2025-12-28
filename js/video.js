@@ -122,6 +122,10 @@ function createCard(url) {
   const wrap = document.createElement("div");
   wrap.className = "video-card";
 
+function createCard(url) {
+  const wrap = document.createElement("div");
+  wrap.className = "video-card";
+
   const v = document.createElement("video");
   v.controls = true;
   v.preload = "metadata";
@@ -129,8 +133,11 @@ function createCard(url) {
   v.setAttribute("webkit-playsinline", "");
   v.playsInline = true;
 
+  // ✅ ВАЖНО: srcUrl объявлен ДО использования
+  const srcUrl = withInitData(url);
+  v.src = srcUrl;
 
-  // metadata hack (как было) — чтобы таймлайн в Telegram не глючил
+  // metadata hack
   v.addEventListener("loadedmetadata", () => {
     try {
       v.currentTime = 0.001;
@@ -138,19 +145,25 @@ function createCard(url) {
     } catch (e) {}
   });
 
-  // прогрев кэша (один раз, когда браузер хоть что-то начал грузить)
+  // прогрев кеша
   let warmed = false;
   const warmOnce = () => {
     if (warmed) return;
     warmed = true;
     warmCache(srcUrl);
   };
+
   v.addEventListener("loadeddata", warmOnce, { passive: true });
   v.addEventListener("play", warmOnce, { passive: true });
 
-  // PAUSE -> вернуть список
+  v.addEventListener("play", () => {
+    v.muted = true;
+    if (!active) return;
+    setActive(cardObj);
+    if (onPlayCb) onPlayCb();
+  });
+
   v.addEventListener("pause", () => {
-    // если видео реально “выключили”, а не мы во время смены модели
     clearActive();
     if (onPauseCb) onPauseCb();
   });
@@ -158,30 +171,9 @@ function createCard(url) {
   wrap.appendChild(v);
 
   const cardObj = { wrap, video: v, url: srcUrl };
-  wrap.addEventListener("click", async () => {
-  if (!active) return;
-
-  setActive(cardObj);
-
-  // iOS-safe запуск (как в эталоне)
-  try {
-    const resp = await fetch(srcUrl);
-    const blob = await resp.blob();
-    const objUrl = URL.createObjectURL(blob);
-
-    v.src = objUrl;
-    v.load();
-
-    await v.play();
-
-    if (onPlayCb) onPlayCb();
-  } catch (e) {
-    console.error("Video play failed:", e);
-  }
-});
-
   return cardObj;
 }
+
 
 function render() {
   if (!listEl) return;
