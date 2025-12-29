@@ -351,8 +351,6 @@ if (hasVideo) {
   tabVideoBtn.classList.add("disabled");
   setVideoList([]); // сбрасываем
 }
-  // По умолчанию всегда стартуем с 3D
-  setViewMode("3d");
 }
 
 /* ===============================
