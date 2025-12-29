@@ -358,6 +358,13 @@ if (hasVideo) {
    =============================== */
 
 function setViewMode(mode) {
+  // ❗ БЛОКИРУЕМ автоматический возврат в 3D,
+  // если пользователь уже вошёл в Видео
+  if (activeView === "video" && mode === "3d") {
+    console.warn("IGNORED setViewMode(3d) while video active");
+    return;
+  }
+
   activeView = mode;
 
   const {
@@ -392,18 +399,16 @@ function setViewMode(mode) {
     if (isVideo) {
       activateVideo();
     } else {
-      deactivateVideo(); // внутри — pause(), как в 8.html
-document.body.classList.remove("video-playing");
-
+      deactivateVideo();
+      document.body.classList.remove("video-playing");
     }
   }
 
-  // При выходе из "Построения" всегда показываем UI
-  if (mode !== "scheme") {
+  // UI показываем только если НЕ видео
+  if (mode !== "video") {
     setUiHidden(false);
   }
 }
-
 /* ===============================
    ПОКАЗ / СКРЫТИЕ ГАЛЕРЕИ / VIEWER
    =============================== */
