@@ -52,12 +52,11 @@ export function initViewer(refs) {
         setUiHidden(true);
         document.body.classList.add("video-playing");
       },
-      onPause: () => {
-        // на паузе НЕ показываем табы/toolbar/status,
-        // потому что video.js покажет свою панель в тулбаре
-        setUiHidden(true);
-        document.body.classList.remove("video-playing");
-      }
+onPause: () => {
+  setUiHidden(false);
+  document.body.classList.remove("video-playing");
+}
+
     }
   );
 
