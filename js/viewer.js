@@ -99,19 +99,31 @@ console.log(
 );
 
 
-initVideo( // CHANGED
+initVideo(
   {
-    overlayEl: dom.videoOverlayEl, // ADDED
-    listEl: dom.videoListEl,       // ADDED
-    emptyEl: dom.videoEmptyEl      // ADDED
+    overlayEl: dom.videoOverlayEl,
+    listEl: dom.videoListEl,
+    emptyEl: dom.videoEmptyEl,
+
+    // ✅ НОВОЕ: куда вставлять видеопанель (то же место, где табы)
+    toolbarEl: dom.viewerToolbarEl,
+
+    // ✅ НОВОЕ: сами табы — чтобы мы могли скрывать/показывать
+    tab3dBtn: dom.tab3dBtn,
+    tabSchemeBtn: dom.tabSchemeBtn,
+    tabVideoBtn: dom.tabVideoBtn
   },
   {
+    // ✅ ВАЖНО: теперь эти коллбеки не должны "закрывать видео"
+    // они только прячут/показывают UI и добавляют класс video-playing
     onPlay: () => {
       setUiHidden(true);
       document.body.classList.add("video-playing");
     },
     onPause: () => {
-      setUiHidden(false);
+      // на паузе UI вьюера НЕ нужен — вместо него будет видеопанель
+      // поэтому UI вьюера оставляем скрытым
+      setUiHidden(true);
       document.body.classList.remove("video-playing");
     }
   }
