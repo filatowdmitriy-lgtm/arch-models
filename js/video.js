@@ -550,10 +550,12 @@ playerVideo.muted = true;      // autoplay policy
 const playPromise = playerVideo.play();
 
 if (playPromise && typeof playPromise.catch === "function") {
-  playPromise.catch(() => {
-    // 🔥 iOS / Telegram отказал обычному play → fallback на blob
-    loadBlobAndPlay(srcUrl);
-  });
+playPromise.catch(() => {
+  // iOS отказал autoplay — оставляем нативные controls
+  setLoading(false);
+  playerVideo.controls = true;
+  showNavPanel();
+});
 }
 
 
