@@ -530,7 +530,7 @@ function openVideoByIndex(idx) {
 
   // Чтобы не было “зачёркнутого play” пока не готово — временно прячем controls
   // (как только canplay — включим обратно)
-  playerVideo.controls = false;
+  // playerVideo.controls = false;
 
   // iOS/TG: стартуем muted, потом снимаем mute на playing
   playerVideo.muted = true;
@@ -542,7 +542,20 @@ function openVideoByIndex(idx) {
   hideNavPanel(); // на старте — панель не должна светиться
 
   // пытаемся autoplay (gesture — это клик по карточке)
-  const p = playerVideo.play();
+  playerVideo.controls = true;   // 🔥 КРИТИЧНО для iOS
+playerVideo.muted = true;
+
+const p = playerVideo.play();
+
+if (p && typeof p.catch === "function") {
+  p.catch(() => {
+    // iOS отказал autoplay — пользователь нажмёт play сам
+    playerVideo.controls = true;
+    showNavPanel();
+    setLoading(false);
+  });
+}
+
 
   // Прогрев кеша после старта (не блокирует play)
   warmCache(srcUrl);
