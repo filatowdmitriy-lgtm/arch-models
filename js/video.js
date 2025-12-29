@@ -1,334 +1,74 @@
 // js/video.js
 //
-// FINAL BASE (Variant B -> your spec)
+// FINAL UI + STREAMING PLAYBACK (base: Variant B logic)
 //
-// SPEC:
-// 1) Mode A: Cards grid 16:9, NO <video> inside cards, scroll works, standard tabs visible.
-// 2) Mode B: Player mode: cards hidden, ONE <video> fills the whole videoOverlay.
-//    - tabs hidden by viewer.js when playing (onPlayCb) and shown when paused (onPauseCb)
-//    - IMPORTANT: pause DOES NOT exit to cards
-// 3) Streaming: we NEVER switch playback src to blob (blob causes full download).
-// 4) iOS/TG safety:
-//    - on open we try play() muted (gesture).
-//    - if play() rejected -> we DO NOT keep UI hidden; we call onPauseCb so user can press native play.
+// СПЕЦИФИКАЦИЯ:
+// 1) Cards mode:
+//    - сетка карточек 16:9
+//    - превью = первый кадр (img), в карточках НЕТ <video>
+//    - скролл работает
+//    - табы 3D/Построение/Видео видны (viewer.js)
 //
-// Exposed API for your future panel buttons:
-//   videoExitToCards(), videoPrev(), videoNext(), videoIsOpen()
-
-import { cachedFetch } from "./cache/cachedFetch.js";
+// 2) Player mode:
+//    - по клику на карточку скрываем cards, показываем ОДИН <video> на всю вкладку
+//    - табы скрываем
+//    - вместо табов показываем панель: [⬅ К карточкам] [⏮] [⏭]
+//    - панель видна ТОЛЬКО на pause
+//    - пауза НЕ выход в карточки
+//
+// Важно:
+// - playback всегда через обычный srcUrl (стрим) => НЕ blob, НЕ full download
+// - никаких cachedFetch/fetch-blob для playback. cachedFetch можно вернуть позже,
+//   но сейчас он создаёт ощущение "скачал целиком" => отключаем для дедлайна.
 
 let overlayEl = null;
 let listEl = null;
 let emptyEl = null;
+
+// refs из viewer.js для управления табами
+let tabsHostEl = null;
+let tab3dBtn = null;
+let tabSchemeBtn = null;
+let tabVideoBtn = null;
 
 let active = false;
 let onPlayCb = null;
 let onPauseCb = null;
 
 let videoList = [];
-let currentIndex = 0;
+let currentIndex = -1;
 
-let cards = []; // { wrap, url, srcUrl }
+// Cards
+let cards = []; // { wrap, img, srcUrl }
 
+// Player
 let playerWrap = null;
 let playerVideo = null;
+let playerLoading = null;
 
-let isOpen = false;
+// Панель навигации (живет там же, где табы)
+let navBarEl = null;
+let navBackBtn = null;
+let navPrevBtn = null;
+let navNextBtn = null;
 
-/* =========================
-   Utils
-   ========================= */
+// режим
+let mode = "cards"; // "cards" | "player"
 
-function withInitData(url) {
-  try {
-    if (!window.TG_INIT_DATA) return url;
-    const u = new URL(url);
-    if (!u.searchParams.get("initData")) u.searchParams.set("initData", window.TG_INIT_DATA);
-    return u.toString();
-  } catch {
-    return url;
-  }
-}
-
-function warmCache(url) {
-  try { cachedFetch(url).catch(() => {}); } catch {}
-}
-
-function safePause() {
-  if (!playerVideo) return;
-  try { playerVideo.pause(); } catch {}
-}
-
-function setBodyPlaying(on) {
-  document.body.classList.toggle("video-playing", !!on);
-}
-
-/* =========================
-   Modes
-   ========================= */
-
-function showList() {
-  isOpen = false;
-
-  if (playerWrap) playerWrap.style.display = "none";
-  if (listEl) listEl.style.display = "grid";
-
-  setBodyPlaying(false);
-  if (onPauseCb) onPauseCb();
-}
-
-function showPlayer() {
-  isOpen = true;
-
-  if (listEl) listEl.style.display = "none";
-  if (playerWrap) playerWrap.style.display = "flex";
-}
-
-/* =========================
-   Player DOM
-   ========================= */
-
-function ensurePlayerDom() {
-  if (!overlayEl) return;
-  if (playerWrap) return;
-
-  playerWrap = document.createElement("div");
-  playerWrap.className = "video-player-wrap";
-  playerWrap.style.cssText = `
-    position:absolute;
-    inset:0;
-    display:none;
-    align-items:center;
-    justify-content:center;
-    background:#000;
-    overflow:hidden;
-  `;
-
-  playerVideo = document.createElement("video");
-  playerVideo.preload = "metadata";
-  playerVideo.controls = true;
-  playerVideo.setAttribute("playsinline", "");
-  playerVideo.setAttribute("webkit-playsinline", "");
-  playerVideo.playsInline = true;
-
-  playerVideo.style.cssText = `
-    width:100%;
-    height:100%;
-    object-fit:contain;
-    background:#000;
-    display:block;
-  `;
-
-  // Timeline hack
-  playerVideo.addEventListener("loadedmetadata", () => {
-    try {
-      playerVideo.currentTime = 0.001;
-      playerVideo.currentTime = 0;
-    } catch {}
-  });
-
-  // IMPORTANT: callbacks only on real play/pause
-  playerVideo.addEventListener("play", () => {
-    setBodyPlaying(true);
-    if (onPlayCb) onPlayCb();
-
-    // unmute after actual start
-    Promise.resolve().then(() => {
-      try { playerVideo.muted = false; } catch {}
-    });
-  });
-
-  playerVideo.addEventListener("pause", () => {
-    setBodyPlaying(false);
-    if (onPauseCb) onPauseCb();
-  });
-
-  playerVideo.addEventListener("ended", () => {
-    setBodyPlaying(false);
-    if (onPauseCb) onPauseCb();
-  });
-
-  playerVideo.addEventListener("error", () => {
-    const err = playerVideo.error;
-    console.error("[video] error:", err);
-    // show UI so user can exit / retry
-    setBodyPlaying(false);
-    if (onPauseCb) onPauseCb();
-  });
-
-  playerWrap.appendChild(playerVideo);
-  overlayEl.appendChild(playerWrap);
-}
-
-/* =========================
-   Playback (STREAMING, NO BLOB)
-   ========================= */
-
-function setSourceForIndex(idx) {
-  if (!playerVideo) return;
-
-  currentIndex = idx;
-
-  const raw = videoList[currentIndex];
-  const srcUrl = withInitData(raw);
-
-  // warm cache in background (should not affect streaming)
-  warmCache(srcUrl);
-
-  // iOS/TG: start muted so gesture autoplay has a chance
-  playerVideo.muted = true;
-
-  playerVideo.src = srcUrl;
-  playerVideo.load();
-
-  const p = playerVideo.play();
-  if (p && typeof p.catch === "function") {
-    p.catch((e) => {
-      // autoplay rejected -> keep controls, show UI panel
-      console.warn("[video] play() rejected:", e);
-      setBodyPlaying(false);
-      if (onPauseCb) onPauseCb();
-      // user can press native play
-    });
-  }
-}
-
-function openVideoByIndex(idx) {
-  if (!active) return;
-  if (!videoList || !videoList.length) return;
-
-  if (idx < 0) idx = videoList.length - 1;
-  if (idx >= videoList.length) idx = 0;
-
-  ensurePlayerDom();
-  showPlayer();
-  setSourceForIndex(idx);
-}
-
-function closePlayerToCards() {
-  safePause();
-
-  if (playerVideo) {
-    try {
-      playerVideo.removeAttribute("src");
-      playerVideo.load();
-    } catch {}
-  }
-
-  showList();
-}
-
-/* =========================
-   Cards (NO <video> inside)
-   ========================= */
-
-function createCard(url, idx) {
-  const srcUrl = withInitData(url);
-
-  const wrap = document.createElement("div");
-  wrap.className = "video-card";
-  wrap.style.cssText = `
-    width:100%;
-    aspect-ratio:16/9;
-    border-radius:12px;
-    overflow:hidden;
-    position:relative;
-    background:#111;
-    cursor:pointer;
-  `;
-
-  // placeholder background (since no <video> in cards)
-  const bg = document.createElement("div");
-  bg.style.cssText = `
-    position:absolute;
-    inset:0;
-    background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
-  `;
-
-  const label = document.createElement("div");
-  label.textContent = `Видео ${idx + 1}`;
-  label.style.cssText = `
-    position:absolute;
-    left:10px; bottom:10px;
-    padding:6px 10px;
-    border-radius:10px;
-    background: rgba(0,0,0,0.35);
-    color: rgba(255,255,255,0.9);
-    font: 600 13px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial;
-  `;
-
-  const icon = document.createElement("div");
-  icon.style.cssText = `
-    position:absolute;
-    inset:0;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    pointer-events:none;
-  `;
-  icon.innerHTML = `
-    <div style="
-      width:56px;height:56px;border-radius:999px;
-      background:rgba(0,0,0,.45);
-      display:flex;align-items:center;justify-content:center;
-    ">
-      <div style="
-        width:0;height:0;
-        border-top:10px solid transparent;
-        border-bottom:10px solid transparent;
-        border-left:16px solid #fff;
-        margin-left:4px;
-      "></div>
-    </div>
-  `;
-
-  wrap.appendChild(bg);
-  wrap.appendChild(icon);
-  wrap.appendChild(label);
-
-  wrap.addEventListener("click", () => {
-    if (!active) return;
-    openVideoByIndex(idx);
-  });
-
-  // warm cache (does not block UI)
-  warmCache(srcUrl);
-
-  return { wrap, url, srcUrl };
-}
-
-function render() {
-  if (!listEl) return;
-
-  listEl.innerHTML = "";
-  cards = [];
-
-  listEl.style.display = "grid";
-  listEl.style.gridTemplateColumns = "repeat(auto-fill, minmax(220px, 1fr))";
-  listEl.style.gap = "12px";
-  listEl.style.padding = "12px";
-  listEl.style.overflowY = "auto";
-  listEl.style.webkitOverflowScrolling = "touch";
-
-  const has = Array.isArray(videoList) && videoList.length > 0;
-  if (emptyEl) emptyEl.style.display = has ? "none" : "block";
-  if (!has) return;
-
-  videoList.forEach((url, idx) => {
-    const card = createCard(url, idx);
-    cards.push(card);
-    listEl.appendChild(card.wrap);
-  });
-}
-
-/* =========================
-   Public API
-   ========================= */
+// ============================================================
+// INIT
+// ============================================================
 
 export function initVideo(refs, callbacks = {}) {
   overlayEl = refs?.overlayEl || null;
   listEl = refs?.listEl || null;
   emptyEl = refs?.emptyEl || null;
+
+  // NEW: прокидываем из viewer.js
+  tabsHostEl = refs?.tabsHostEl || null;
+  tab3dBtn = refs?.tab3dBtn || null;
+  tabSchemeBtn = refs?.tabSchemeBtn || null;
+  tabVideoBtn = refs?.tabVideoBtn || null;
 
   onPlayCb = callbacks.onPlay || null;
   onPauseCb = callbacks.onPause || null;
@@ -338,9 +78,575 @@ export function initVideo(refs, callbacks = {}) {
     return;
   }
 
+  // Список — сетка карточек
+  listEl.innerHTML = "";
+  listEl.style.display = "grid";
+  listEl.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+  listEl.style.gap = "12px";
+  listEl.style.padding = "12px";
+  listEl.style.overflowY = "auto";
+  listEl.style.webkitOverflowScrolling = "touch";
+
   ensurePlayerDom();
-  showList();
+  ensureNavBar();
+
+  // старт
+  showCardsMode();
 }
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+function isIOS() {
+  const ua = navigator.userAgent || "";
+  return (
+    /iPhone|iPad|iPod/i.test(ua) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
+
+function withInitData(url) {
+  try {
+    if (!window.TG_INIT_DATA) return url;
+    const u = new URL(url);
+    if (!u.searchParams.get("initData")) {
+      u.searchParams.set("initData", window.TG_INIT_DATA);
+    }
+    return u.toString();
+  } catch (e) {
+    return url;
+  }
+}
+
+function setEmptyVisible(isEmpty) {
+  if (!emptyEl) return;
+  emptyEl.style.display = isEmpty ? "block" : "none";
+}
+
+function hideTabsShowNav() {
+  if (tab3dBtn) tab3dBtn.style.display = "none";
+  if (tabSchemeBtn) tabSchemeBtn.style.display = "none";
+  if (tabVideoBtn) tabVideoBtn.style.display = "none";
+  if (navBarEl) navBarEl.style.display = "flex";
+}
+
+function showTabsHideNav() {
+  if (navBarEl) navBarEl.style.display = "none";
+  if (tab3dBtn) tab3dBtn.style.display = "";
+  if (tabSchemeBtn) tabSchemeBtn.style.display = "";
+  if (tabVideoBtn) tabVideoBtn.style.display = "";
+}
+
+function setNavVisible(visible) {
+  // панель должна быть видна ТОЛЬКО на pause
+  if (!navBarEl) return;
+  navBarEl.style.visibility = visible ? "visible" : "hidden";
+  navBarEl.style.pointerEvents = visible ? "auto" : "none";
+}
+
+function setLoading(on) {
+  if (!playerLoading) return;
+  playerLoading.style.display = on ? "flex" : "none";
+}
+
+function stopPlayer() {
+  if (!playerVideo) return;
+  try { playerVideo.pause(); } catch (e) {}
+  try {
+    playerVideo.removeAttribute("src");
+    playerVideo.load();
+  } catch (e) {}
+  setLoading(false);
+}
+
+// ============================================================
+// NAV BAR (вместо табов)
+// ============================================================
+
+function ensureNavBar() {
+  if (navBarEl) return;
+
+  // Если refs не передали — попробуем найти контейнер табов (на всякий)
+  if (!tabsHostEl) {
+    tabsHostEl = document.querySelector(".viewer-toolbar") || null;
+  }
+  if (!tabsHostEl) {
+    console.warn("[video] tabsHostEl not provided; nav bar won't mount properly");
+    return;
+  }
+
+  navBarEl = document.createElement("div");
+  navBarEl.className = "video-nav-bar";
+  navBarEl.style.cssText = `
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+  `;
+
+  const left = document.createElement("button");
+  left.type = "button";
+  left.textContent = "⬅ К карточкам";
+  left.style.cssText = baseBtnCss();
+
+  const mid = document.createElement("div");
+  mid.style.cssText = `display:flex; gap:10px; align-items:center; justify-content:center; flex:0 0 auto;`;
+
+  const prev = document.createElement("button");
+  prev.type = "button";
+  prev.textContent = "⏮";
+  prev.style.cssText = baseBtnCss(true);
+
+  const next = document.createElement("button");
+  next.type = "button";
+  next.textContent = "⏭";
+  next.style.cssText = baseBtnCss(true);
+
+  mid.appendChild(prev);
+  mid.appendChild(next);
+
+  navBarEl.appendChild(left);
+  navBarEl.appendChild(mid);
+
+  tabsHostEl.appendChild(navBarEl);
+
+  navBackBtn = left;
+  navPrevBtn = prev;
+  navNextBtn = next;
+
+  navBackBtn.addEventListener("click", () => {
+    closePlayerToCards();
+  });
+  navPrevBtn.addEventListener("click", () => {
+    if (currentIndex < 0) return;
+    openVideoByIndex(currentIndex - 1, { autoplay: false }); // мы на паузе
+  });
+  navNextBtn.addEventListener("click", () => {
+    if (currentIndex < 0) return;
+    openVideoByIndex(currentIndex + 1, { autoplay: false });
+  });
+
+  // по умолчанию скрыта полностью
+  setNavVisible(false);
+}
+
+function baseBtnCss(round = false) {
+  if (round) {
+    return `
+      width: 44px; height: 34px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.22);
+      background: rgba(255,255,255,0.10);
+      color: rgba(255,255,255,0.92);
+      font: 600 16px/1 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    `;
+  }
+  return `
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.22);
+    background: rgba(255,255,255,0.10);
+    color: rgba(255,255,255,0.92);
+    font: 600 14px/1 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    white-space: nowrap;
+  `;
+}
+
+// ============================================================
+// PLAYER DOM (внутри overlayEl, на всю область вкладки)
+// ============================================================
+
+function ensurePlayerDom() {
+  if (playerWrap) return;
+
+  // overlayEl обычно flex, делаем relative чтобы absolute player работал
+  try {
+    const st = window.getComputedStyle(overlayEl);
+    if (st.position === "static") overlayEl.style.position = "relative";
+  } catch (e) {
+    overlayEl.style.position = "relative";
+  }
+
+  playerWrap = document.createElement("div");
+  playerWrap.className = "video-player-wrap";
+  playerWrap.style.cssText = `
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    overflow: hidden;
+  `;
+
+  playerVideo = document.createElement("video");
+  playerVideo.preload = "metadata";
+  playerVideo.controls = true;
+  playerVideo.setAttribute("playsinline", "");
+  playerVideo.setAttribute("webkit-playsinline", "");
+  playerVideo.playsInline = true;
+  playerVideo.style.cssText = `
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+    display: block;
+  `;
+
+  // метадата хак (таймлайн)
+  playerVideo.addEventListener("loadedmetadata", () => {
+    try {
+      playerVideo.currentTime = 0.001;
+      playerVideo.currentTime = 0;
+    } catch (e) {}
+  });
+
+  playerLoading = document.createElement("div");
+  playerLoading.style.cssText = `
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.35);
+    color: #fff;
+    font: 600 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  `;
+  playerLoading.textContent = "Загрузка…";
+
+  // События play/pause -> UI
+  playerVideo.addEventListener("play", () => {
+    setLoading(false);
+
+    // при play панель скрыта
+    setNavVisible(false);
+
+    // viewer.js: спрятать остальной UI (как раньше)
+    if (onPlayCb) onPlayCb();
+    document.body.classList.add("video-playing");
+  });
+
+  playerVideo.addEventListener("pause", () => {
+    // при pause панель видна
+    setNavVisible(true);
+
+    if (onPauseCb) onPauseCb();
+    document.body.classList.remove("video-playing");
+  });
+
+  // buffering
+  playerVideo.addEventListener("waiting", () => setLoading(true));
+  playerVideo.addEventListener("playing", () => setLoading(false));
+  playerVideo.addEventListener("canplay", () => setLoading(false));
+
+  playerVideo.addEventListener("error", () => {
+    setLoading(false);
+    console.error("[video] player error:", playerVideo.error);
+    // если ошибка — панель оставим видимой (чтобы можно было выйти)
+    setNavVisible(true);
+  });
+
+  playerWrap.appendChild(playerVideo);
+  playerWrap.appendChild(playerLoading);
+
+  overlayEl.appendChild(playerWrap);
+}
+
+// ============================================================
+// MODES
+// ============================================================
+
+function showCardsMode() {
+  mode = "cards";
+  currentIndex = -1;
+
+  // player off
+  if (playerWrap) playerWrap.style.display = "none";
+  stopPlayer();
+
+  // list on
+  if (listEl) listEl.style.display = "grid";
+
+  // табы видны
+  showTabsHideNav();
+
+  // viewer ui normal
+  document.body.classList.remove("video-playing");
+  setNavVisible(false);
+}
+
+function showPlayerMode() {
+  mode = "player";
+
+  // list off
+  if (listEl) listEl.style.display = "none";
+
+  // player on
+  if (playerWrap) playerWrap.style.display = "flex";
+
+  // табы скрыть, нав показать (но пока невидима до паузы)
+  hideTabsShowNav();
+  setNavVisible(false);
+}
+
+// ============================================================
+// CARDS (16:9 + PREVIEW IMG, no <video> in cards)
+// ============================================================
+
+function createCard(rawUrl, idx) {
+  const srcUrl = withInitData(rawUrl);
+
+  const wrap = document.createElement("div");
+  wrap.className = "video-card";
+  wrap.style.cssText = `
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative;
+    background: #111;
+    border: 1px solid rgba(255,255,255,0.08);
+  `;
+
+  const img = document.createElement("img");
+  img.alt = `Видео ${idx + 1}`;
+  img.style.cssText = `
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    background: #000;
+  `;
+  img.src = ""; // поставим позже
+
+  // play icon overlay
+  const icon = document.createElement("div");
+  icon.style.cssText = `
+    position: absolute;
+    inset: 0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    pointer-events:none;
+  `;
+  icon.innerHTML = `
+    <div style="
+      width:56px; height:56px;
+      border-radius:999px;
+      background: rgba(0,0,0,0.45);
+      display:flex; align-items:center; justify-content:center;
+    ">
+      <div style="
+        width:0; height:0;
+        border-top:10px solid transparent;
+        border-bottom:10px solid transparent;
+        border-left:16px solid #fff;
+        margin-left: 4px;
+      "></div>
+    </div>
+  `;
+
+  wrap.appendChild(img);
+  wrap.appendChild(icon);
+
+  wrap.addEventListener("click", () => {
+    if (!active) return;
+    openVideoByIndex(idx, { autoplay: true });
+  });
+
+  // превью (асинхронно, не ломает UI)
+  setCardPreview(img, srcUrl);
+
+  return { wrap, img, srcUrl };
+}
+
+function renderCards() {
+  if (!listEl) return;
+
+  listEl.innerHTML = "";
+  cards = [];
+  currentIndex = -1;
+
+  const has = Array.isArray(videoList) && videoList.length > 0;
+  setEmptyVisible(!has);
+  if (!has) return;
+
+  // если 1 видео — делаем 1 колонку, чтобы было крупнее
+  if (videoList.length === 1) {
+    listEl.style.gridTemplateColumns = "repeat(1, minmax(0, 1fr))";
+  } else {
+    listEl.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+  }
+
+  videoList.forEach((u, idx) => {
+    const card = createCard(u, idx);
+    cards.push(card);
+    listEl.appendChild(card.wrap);
+  });
+}
+
+// Превью: делаем кадр через скрытый video+canvas (не вставляем video в карточку)
+async function setCardPreview(imgEl, srcUrl) {
+  if (!imgEl || !srcUrl) return;
+
+  // кэш
+  // (если превью уже снято — ставим мгновенно)
+  // ключ: srcUrl
+  try {
+    // простая мем-кеш логика:
+    if (imgEl.__prevKey === srcUrl && imgEl.src) return;
+    imgEl.__prevKey = srcUrl;
+  } catch (e) {}
+
+  // быстрый fallback: тёмное превью до кадра
+  imgEl.style.filter = "brightness(0.8)";
+
+  // iOS / TG: генерация превью может быть нестабильной без user gesture.
+  // Но мы пробуем. Если не выйдет — просто останется темный фон.
+  try {
+    const frameUrl = await captureFirstFrame(srcUrl);
+    if (frameUrl) {
+      imgEl.src = frameUrl;
+      imgEl.style.filter = "";
+    }
+  } catch (e) {
+    // молча
+  }
+}
+
+// Снимаем первый кадр
+function captureFirstFrame(srcUrl) {
+  return new Promise((resolve) => {
+    const v = document.createElement("video");
+    v.muted = true;
+    v.preload = "metadata";
+    v.setAttribute("playsinline", "");
+    v.setAttribute("webkit-playsinline", "");
+    v.playsInline = true;
+    v.crossOrigin = "anonymous"; // если сервер разрешает CORS — получится
+    v.src = srcUrl;
+
+    const clean = () => {
+      try { v.pause(); } catch (e) {}
+      v.removeAttribute("src");
+      try { v.load(); } catch (e) {}
+    };
+
+    const fail = () => {
+      clean();
+      resolve(null);
+    };
+
+    const onReady = () => {
+      // пробуем прыгнуть на микросекунду чтобы появился кадр
+      try {
+        v.currentTime = 0.001;
+      } catch (e) {
+        // иногда нельзя — ок
+      }
+
+      // даём чуть времени декодеру
+      setTimeout(() => {
+        try {
+          const w = v.videoWidth || 0;
+          const h = v.videoHeight || 0;
+          if (!w || !h) return fail();
+
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(v, 0, 0, w, h);
+
+          // если CORS не разрешён, тут будет SecurityError
+          const data = canvas.toDataURL("image/jpeg", 0.82);
+          clean();
+          resolve(data);
+        } catch (e) {
+          fail();
+        }
+      }, 120);
+    };
+
+    v.addEventListener("loadeddata", onReady, { once: true, passive: true });
+    v.addEventListener("error", fail, { once: true, passive: true });
+
+    // принудительно начинаем загрузку метадаты
+    try { v.load(); } catch (e) {}
+  });
+}
+
+// ============================================================
+// PLAYBACK (стрим, iOS-safe gesture)
+// ============================================================
+
+function clampIndex(idx) {
+  if (!videoList || videoList.length === 0) return -1;
+  if (idx < 0) return videoList.length - 1;
+  if (idx >= videoList.length) return 0;
+  return idx;
+}
+
+function openVideoByIndex(idx, opts = { autoplay: true }) {
+  if (!active) return;
+  if (!videoList || !videoList.length) return;
+
+  idx = clampIndex(idx);
+  if (idx < 0) return;
+
+  currentIndex = idx;
+
+  const srcUrl = cards[idx]?.srcUrl || withInitData(videoList[idx]);
+
+  showPlayerMode();
+
+  // Ставим src (стрим)
+  playerVideo.muted = true; // старт muted для iOS
+  playerVideo.src = srcUrl;
+  try { playerVideo.load(); } catch (e) {}
+
+  setLoading(true);
+
+  // Если autoplay=true — пытаемся play() прямо из клика по карточке (gesture!)
+  if (opts.autoplay) {
+    const p = playerVideo.play();
+    if (p && typeof p.catch === "function") {
+      p.catch(() => {
+        // если iOS отклонил autoplay — оставим на паузе
+        setLoading(false);
+        // покажем панель (pause state)
+        setNavVisible(true);
+      });
+    }
+  } else {
+    // мы открываем на паузе (переключение prev/next) — панель должна быть видна
+    setLoading(false);
+    setNavVisible(true);
+  }
+
+  // снять mute когда реально playing
+  const unmuteOnce = () => {
+    playerVideo.removeEventListener("playing", unmuteOnce);
+    try { playerVideo.muted = false; } catch (e) {}
+  };
+  playerVideo.addEventListener("playing", unmuteOnce);
+}
+
+function closePlayerToCards() {
+  // остановить и вернуться
+  stopPlayer();
+  showCardsMode();
+
+  // viewer.js UI вернуть
+  if (onPauseCb) onPauseCb();
+}
+
+// ============================================================
+// PUBLIC API
+// ============================================================
 
 export function activateVideo() {
   active = true;
@@ -348,32 +654,23 @@ export function activateVideo() {
 
 export function setVideoList(list) {
   videoList = Array.isArray(list) ? list : (list ? [list] : []);
-  currentIndex = 0;
-  render();
+  renderCards();
+  // при смене списка — вернуться в cards
+  showCardsMode();
 }
 
 export function deactivateVideo() {
   active = false;
-  // leaving tab -> close player
-  closePlayerToCards();
-  setBodyPlaying(false);
-}
 
-// Buttons for your future panel
-export function videoExitToCards() {
-  closePlayerToCards();
-}
+  // если были в player — закрываем
+  if (mode === "player") {
+    closePlayerToCards();
+  }
 
-export function videoPrev() {
-  if (!videoList.length) return;
-  openVideoByIndex(currentIndex - 1);
-}
+  // safety
+  document.body.classList.remove("video-playing");
+  setNavVisible(false);
+  showTabsHideNav();
 
-export function videoNext() {
-  if (!videoList.length) return;
-  openVideoByIndex(currentIndex + 1);
-}
-
-export function videoIsOpen() {
-  return !!isOpen;
+  stopPlayer();
 }
