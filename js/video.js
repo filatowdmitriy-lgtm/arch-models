@@ -50,6 +50,10 @@ let playerWrap = null;
 let playerVideo = null;
 let playerLoading = null;
 
+// Blob fallback (iOS / Telegram)
+let currentBlobUrl = null;
+let blobLoading = false;
+
 // Panel DOM (вместо табов)
 let navPanel = null;
 let btnBack = null;
@@ -540,36 +544,26 @@ function openVideoByIndex(idx) {
 
   setLoading(true);
   hideNavPanel(); // на старте — панель не должна светиться
+   playerVideo.controls = true;   // обязательно для iOS
+playerVideo.muted = true;      // autoplay policy
+
+const playPromise = playerVideo.play();
+
+if (playPromise && typeof playPromise.catch === "function") {
+  playPromise.catch(() => {
+    // 🔥 iOS / Telegram отказал обычному play → fallback на blob
+    loadBlobAndPlay(srcUrl);
+  });
+}
+
 
   // пытаемся autoplay (gesture — это клик по карточке)
   playerVideo.controls = true;   // 🔥 КРИТИЧНО для iOS
 playerVideo.muted = true;
 
-const p = playerVideo.play();
-
-if (p && typeof p.catch === "function") {
-  p.catch(() => {
-    // iOS отказал autoplay — пользователь нажмёт play сам
-    playerVideo.controls = true;
-    showNavPanel();
-    setLoading(false);
-  });
-}
-
 
   // Прогрев кеша после старта (не блокирует play)
   warmCache(srcUrl);
-
-  if (p && typeof p.catch === "function") {
-    p.catch((e) => {
-      // если iOS/Telegram отказал autoplay:
-      // показываем controls и панель (пользователь нажмёт play нативной кнопкой)
-      setLoading(false);
-      playerVideo.controls = true;
-      showNavPanel();
-      console.warn("[video] play() rejected:", e);
-    });
-  }
 
   // Снимаем mute когда реально пошло
   const unmuteOnce = () => {
@@ -604,6 +598,32 @@ function closePlayerToCards() {
   // viewer.js пусть покажет обычный UI
   // (если ты хочешь: возвращаем UI полностью)
   if (onPauseCb) onPauseCb();
+}
+
+async function loadBlobAndPlay(srcUrl) {
+  if (blobLoading) return;
+  blobLoading = true;
+
+  try {
+    const resp = await fetch(srcUrl);
+    const blob = await resp.blob();
+
+    if (currentBlobUrl) {
+      URL.revokeObjectURL(currentBlobUrl);
+    }
+
+    currentBlobUrl = URL.createObjectURL(blob);
+
+    playerVideo.src = currentBlobUrl;
+    playerVideo.load();
+
+    await playerVideo.play();
+  } catch (e) {
+    console.warn("[video] blob fallback failed", e);
+  } finally {
+    blobLoading = false;
+    setLoading(false);
+  }
 }
 
 /* =========================
