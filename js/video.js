@@ -1,20 +1,19 @@
 // js/video.js
 //
-// BASE: Variant B (iOS-safe autoplay attempt on direct URL)
-// FIXES:
-// 1) NO blob swap for playback (prevents full download caused by fetch->blob->objectURL)
-// 2) Toolbar/UI callbacks fire ONLY on real play/pause (not on open), so UI won't disappear forever
-// 3) Two modes: Cards (grid 16:9 preview) and Player (single fullscreen video)
-// 4) Expose nav API for viewer-panel buttons: videoExitToCards / videoPrev / videoNext
+// FINAL BASE (Variant B -> your spec)
 //
-// NOTE about previews:
-// - Cards do NOT contain <video>. We render <canvas> preview.
-// - Preview is generated via ONE hidden <video> (offscreen) -> draw first frame to canvas.
-// - If CORS prevents drawing (tainted canvas), we keep placeholder.
+// SPEC:
+// 1) Mode A: Cards grid 16:9, NO <video> inside cards, scroll works, standard tabs visible.
+// 2) Mode B: Player mode: cards hidden, ONE <video> fills the whole videoOverlay.
+//    - tabs hidden by viewer.js when playing (onPlayCb) and shown when paused (onPauseCb)
+//    - IMPORTANT: pause DOES NOT exit to cards
+// 3) Streaming: we NEVER switch playback src to blob (blob causes full download).
+// 4) iOS/TG safety:
+//    - on open we try play() muted (gesture).
+//    - if play() rejected -> we DO NOT keep UI hidden; we call onPauseCb so user can press native play.
 //
-// Streaming requirement:
-// - true streaming depends on server Range support + mp4 fast-start.
-// - this file ensures we DO NOT break streaming by swapping to blob.
+// Exposed API for your future panel buttons:
+//   videoExitToCards(), videoPrev(), videoNext(), videoIsOpen()
 
 import { cachedFetch } from "./cache/cachedFetch.js";
 
@@ -29,21 +28,16 @@ let onPauseCb = null;
 let videoList = [];
 let currentIndex = 0;
 
-let cards = []; // { wrap, canvas, url, srcUrl }
+let cards = []; // { wrap, url, srcUrl }
 
 let playerWrap = null;
 let playerVideo = null;
 
 let isOpen = false;
 
-// ===== preview worker (single hidden video) =====
-let previewVideo = null;
-let previewBusy = false;
-let previewQueue = [];
-
-// =========================
-// Utils
-// =========================
+/* =========================
+   Utils
+   ========================= */
 
 function withInitData(url) {
   try {
@@ -69,28 +63,30 @@ function setBodyPlaying(on) {
   document.body.classList.toggle("video-playing", !!on);
 }
 
-// =========================
-// Mode switch
-// =========================
+/* =========================
+   Modes
+   ========================= */
 
 function showList() {
   isOpen = false;
+
   if (playerWrap) playerWrap.style.display = "none";
   if (listEl) listEl.style.display = "grid";
+
   setBodyPlaying(false);
-  // viewer may show standard tabs in "cards mode"
   if (onPauseCb) onPauseCb();
 }
 
 function showPlayer() {
   isOpen = true;
+
   if (listEl) listEl.style.display = "none";
   if (playerWrap) playerWrap.style.display = "flex";
 }
 
-// =========================
-// Player DOM
-// =========================
+/* =========================
+   Player DOM
+   ========================= */
 
 function ensurePlayerDom() {
   if (!overlayEl) return;
@@ -105,6 +101,7 @@ function ensurePlayerDom() {
     align-items:center;
     justify-content:center;
     background:#000;
+    overflow:hidden;
   `;
 
   playerVideo = document.createElement("video");
@@ -113,6 +110,7 @@ function ensurePlayerDom() {
   playerVideo.setAttribute("playsinline", "");
   playerVideo.setAttribute("webkit-playsinline", "");
   playerVideo.playsInline = true;
+
   playerVideo.style.cssText = `
     width:100%;
     height:100%;
@@ -121,7 +119,7 @@ function ensurePlayerDom() {
     display:block;
   `;
 
-  // timeline hack
+  // Timeline hack
   playerVideo.addEventListener("loadedmetadata", () => {
     try {
       playerVideo.currentTime = 0.001;
@@ -129,9 +127,8 @@ function ensurePlayerDom() {
     } catch {}
   });
 
-  // IMPORTANT: UI callbacks tied to real media state
+  // IMPORTANT: callbacks only on real play/pause
   playerVideo.addEventListener("play", () => {
-    // during play -> hide panel (viewer) / show only native controls
     setBodyPlaying(true);
     if (onPlayCb) onPlayCb();
 
@@ -142,7 +139,6 @@ function ensurePlayerDom() {
   });
 
   playerVideo.addEventListener("pause", () => {
-    // paused -> show panel (viewer)
     setBodyPlaying(false);
     if (onPauseCb) onPauseCb();
   });
@@ -154,8 +150,8 @@ function ensurePlayerDom() {
 
   playerVideo.addEventListener("error", () => {
     const err = playerVideo.error;
-    console.error("[video] player error:", err);
-    // show panel so user can exit
+    console.error("[video] error:", err);
+    // show UI so user can exit / retry
     setBodyPlaying(false);
     if (onPauseCb) onPauseCb();
   });
@@ -164,9 +160,9 @@ function ensurePlayerDom() {
   overlayEl.appendChild(playerWrap);
 }
 
-// =========================
-// Playback (NO BLOB SWAP)
-// =========================
+/* =========================
+   Playback (STREAMING, NO BLOB)
+   ========================= */
 
 function setSourceForIndex(idx) {
   if (!playerVideo) return;
@@ -176,23 +172,23 @@ function setSourceForIndex(idx) {
   const raw = videoList[currentIndex];
   const srcUrl = withInitData(raw);
 
+  // warm cache in background (should not affect streaming)
   warmCache(srcUrl);
 
-  // iOS gesture safe: start muted
+  // iOS/TG: start muted so gesture autoplay has a chance
   playerVideo.muted = true;
 
-  // direct URL => streaming if server supports ranges
   playerVideo.src = srcUrl;
   playerVideo.load();
 
   const p = playerVideo.play();
   if (p && typeof p.catch === "function") {
     p.catch((e) => {
-      // IMPORTANT: do NOT hide UI forever if autoplay rejected
+      // autoplay rejected -> keep controls, show UI panel
       console.warn("[video] play() rejected:", e);
       setBodyPlaying(false);
-      if (onPauseCb) onPauseCb(); // show panel so user can press native play
-      // leave controls visible: controls already true
+      if (onPauseCb) onPauseCb();
+      // user can press native play
     });
   }
 }
@@ -211,124 +207,20 @@ function openVideoByIndex(idx) {
 
 function closePlayerToCards() {
   safePause();
+
   if (playerVideo) {
     try {
       playerVideo.removeAttribute("src");
       playerVideo.load();
     } catch {}
   }
+
   showList();
 }
 
-// =========================
-// Preview generator (hidden video -> canvas)
-// =========================
-
-function ensurePreviewWorker() {
-  if (previewVideo) return;
-
-  previewVideo = document.createElement("video");
-  previewVideo.muted = true;
-  previewVideo.preload = "metadata";
-  previewVideo.setAttribute("playsinline", "");
-  previewVideo.setAttribute("webkit-playsinline", "");
-  previewVideo.playsInline = true;
-
-  // offscreen
-  previewVideo.style.position = "fixed";
-  previewVideo.style.left = "-99999px";
-  previewVideo.style.top = "-99999px";
-  previewVideo.style.width = "1px";
-  previewVideo.style.height = "1px";
-  previewVideo.style.opacity = "0";
-  previewVideo.style.pointerEvents = "none";
-
-  document.body.appendChild(previewVideo);
-}
-
-function enqueuePreview(card) {
-  previewQueue.push(card);
-  pumpPreviewQueue();
-}
-
-async function pumpPreviewQueue() {
-  if (previewBusy) return;
-  if (!previewQueue.length) return;
-
-  ensurePreviewWorker();
-  previewBusy = true;
-
-  const card = previewQueue.shift();
-  try {
-    await renderPreviewToCanvas(card);
-  } catch (e) {
-    // ignore
-  } finally {
-    previewBusy = false;
-    pumpPreviewQueue();
-  }
-}
-
-function waitOnce(el, ev) {
-  return new Promise((resolve) => {
-    const fn = () => {
-      el.removeEventListener(ev, fn);
-      resolve();
-    };
-    el.addEventListener(ev, fn, { once: true, passive: true });
-  });
-}
-
-async function renderPreviewToCanvas(card) {
-  if (!previewVideo) return;
-  if (!card || !card.canvas || !card.srcUrl) return;
-
-  // if already painted (avoid repeats)
-  if (card.__previewDone) return;
-  card.__previewDone = true;
-
-  previewVideo.src = card.srcUrl;
-  previewVideo.load();
-
-  // wait for data
-  await Promise.race([
-    waitOnce(previewVideo, "loadeddata"),
-    waitOnce(previewVideo, "canplay"),
-  ]);
-
-  // seek tiny bit to force first frame
-  try { previewVideo.currentTime = 0.001; } catch {}
-
-  // give browser a tick
-  await new Promise((r) => setTimeout(r, 30));
-
-  const c = card.canvas;
-  const ctx = c.getContext("2d");
-
-  const vw = previewVideo.videoWidth || 1280;
-  const vh = previewVideo.videoHeight || 720;
-
-  // canvas size same ratio as card
-  c.width = 1280;
-  c.height = 720;
-
-  // cover
-  const scale = Math.max(c.width / vw, c.height / vh);
-  const dw = vw * scale;
-  const dh = vh * scale;
-  const dx = (c.width - dw) / 2;
-  const dy = (c.height - dh) / 2;
-
-  try {
-    ctx.drawImage(previewVideo, dx, dy, dw, dh);
-  } catch (e) {
-    // CORS taint or decode error -> keep placeholder
-  }
-}
-
-// =========================
-// Cards rendering (16:9 grid, no <video> inside)
-// =========================
+/* =========================
+   Cards (NO <video> inside)
+   ========================= */
 
 function createCard(url, idx) {
   const srcUrl = withInitData(url);
@@ -345,15 +237,26 @@ function createCard(url, idx) {
     cursor:pointer;
   `;
 
-  const canvas = document.createElement("canvas");
-  canvas.style.cssText = `
-    width:100%;
-    height:100%;
-    display:block;
-    background:#000;
+  // placeholder background (since no <video> in cards)
+  const bg = document.createElement("div");
+  bg.style.cssText = `
+    position:absolute;
+    inset:0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
   `;
 
-  // play icon overlay
+  const label = document.createElement("div");
+  label.textContent = `Видео ${idx + 1}`;
+  label.style.cssText = `
+    position:absolute;
+    left:10px; bottom:10px;
+    padding:6px 10px;
+    border-radius:10px;
+    background: rgba(0,0,0,0.35);
+    color: rgba(255,255,255,0.9);
+    font: 600 13px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  `;
+
   const icon = document.createElement("div");
   icon.style.cssText = `
     position:absolute;
@@ -379,24 +282,19 @@ function createCard(url, idx) {
     </div>
   `;
 
-  wrap.appendChild(canvas);
+  wrap.appendChild(bg);
   wrap.appendChild(icon);
+  wrap.appendChild(label);
 
   wrap.addEventListener("click", () => {
     if (!active) return;
     openVideoByIndex(idx);
   });
 
-  const card = { wrap, canvas, url, srcUrl, __previewDone: false };
-
-  // cache warm (doesn't affect playback)
+  // warm cache (does not block UI)
   warmCache(srcUrl);
 
-  // enqueue preview render
-  // IMPORTANT: preview rendering may be blocked by CORS; then placeholder stays
-  enqueuePreview(card);
-
-  return card;
+  return { wrap, url, srcUrl };
 }
 
 function render() {
@@ -405,7 +303,6 @@ function render() {
   listEl.innerHTML = "";
   cards = [];
 
-  // grid of cards
   listEl.style.display = "grid";
   listEl.style.gridTemplateColumns = "repeat(auto-fill, minmax(220px, 1fr))";
   listEl.style.gap = "12px";
@@ -424,9 +321,9 @@ function render() {
   });
 }
 
-// =========================
-// Public API (viewer.js)
-// =========================
+/* =========================
+   Public API
+   ========================= */
 
 export function initVideo(refs, callbacks = {}) {
   overlayEl = refs?.overlayEl || null;
@@ -457,11 +354,12 @@ export function setVideoList(list) {
 
 export function deactivateVideo() {
   active = false;
-  // leaving tab -> close player and show list
+  // leaving tab -> close player
   closePlayerToCards();
+  setBodyPlaying(false);
 }
 
-// ===== NAV API for your custom panel (buttons near tabs) =====
+// Buttons for your future panel
 export function videoExitToCards() {
   closePlayerToCards();
 }
