@@ -351,6 +351,8 @@ if (hasVideo) {
   tabVideoBtn.classList.add("disabled");
   setVideoList([]); // сбрасываем
 }
+  // По умолчанию всегда стартуем с 3D
+  setViewMode("3d");
 }
 
 /* ===============================
@@ -358,13 +360,6 @@ if (hasVideo) {
    =============================== */
 
 function setViewMode(mode) {
-  // ❗ БЛОКИРУЕМ автоматический возврат в 3D,
-  // если пользователь уже вошёл в Видео
-  if (activeView === "video" && mode === "3d") {
-    console.warn("IGNORED setViewMode(3d) while video active");
-    return;
-  }
-
   activeView = mode;
 
   const {
@@ -399,16 +394,18 @@ function setViewMode(mode) {
     if (isVideo) {
       activateVideo();
     } else {
-      deactivateVideo();
-      document.body.classList.remove("video-playing");
+      deactivateVideo(); // внутри — pause(), как в 8.html
+document.body.classList.remove("video-playing");
+
     }
   }
 
-  // UI показываем только если НЕ видео
-  if (mode !== "video") {
+  // При выходе из "Построения" всегда показываем UI
+  if (mode !== "scheme") {
     setUiHidden(false);
   }
 }
+
 /* ===============================
    ПОКАЗ / СКРЫТИЕ ГАЛЕРЕИ / VIEWER
    =============================== */
