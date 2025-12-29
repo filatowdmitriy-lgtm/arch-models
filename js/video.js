@@ -1,17 +1,17 @@
 // js/video.js
 //
-// FINAL SPEC (фиксируем):
-// 1) Вкладка Видео имеет 2 режима:
-//    - Cards Mode: сетка карточек 16:9, превью = первый кадр, НЕТ <video> в карточках, табы 3D/Схема/Видео видимы
-//    - Player Mode: карточки скрыты, один <video> занимает всю область вкладки, табы скрыты,
-//      вместо табов появляется Video Nav Panel: [К карточкам] [Prev] [Next]
-// 2) Video Nav Panel видна ТОЛЬКО когда видео на паузе
-// 3) Выход из Player Mode: кнопка "К карточкам" ИЛИ переключение вкладки (deactivateVideo)
-// 4) iOS/TG: нельзя await fetch/blob ДО play(). Поэтому:
-//    - на клик: src=url + muted=true + play() сразу
-//    - blob догружаем после старта (в фоне), при успехе подменяем src -> blob, сохраняя currentTime.
+// FINAL (Spec-compliant):
+// - Cards mode: 16:9 grid, preview = first frame, NO <video> in cards (only <img>)
+// - Player mode: single <video> in tab area, full size
+// - Tabs hidden in player mode; in their place show Video Nav panel ONLY when paused:
+//   [ ⬅ К карточкам ] [ ⏮ ] [ ⏭ ]
 //
-// НЕ трогаем cachedFetch.js — используем только warmCache().
+// iOS/TG stability:
+// - DO NOT fetch/blob before play (gesture loss)
+// - Set direct srcUrl, play() muted within the click handler
+// - In parallel (iOS only) load blob and swap src to remove "struck play"
+//
+// NOTE: We keep cachedFetch warmup but do NOT change its logic.
 
 import { cachedFetch } from "./cache/cachedFetch.js";
 
@@ -19,73 +19,33 @@ let overlayEl = null;
 let listEl = null;
 let emptyEl = null;
 
-let toolbarEl = null;
-let tab3dBtn = null;
-let tabSchemeBtn = null;
-let tabVideoBtn = null;
-
 let active = false;
-let onPlayCb = null;
-let onPauseCb = null;
+let onPlayCb = null;   // viewer.js callback (can hide whole UI)
+let onPauseCb = null;  // viewer.js callback
 
-let videoList = [];     // raw urls
-let srcList = [];       // urls with initData
-let currentIndex = -1;
+let videoList = [];
+let currentIndex = 0;
 
-// режимы
-let isPlayerMode = false;
+// Cards state
+let cards = []; // { wrap, img, url, srcUrl }
 
-// ===== Player DOM (one <video>) =====
-let playerWrap = null;     // container inside overlayEl
-let playerVideo = null;    // the only <video>
-let playerLoading = null;  // loading overlay
+// Player state
+let playerWrap = null;
+let playerVideo = null;
+let isPlayerOpen = false;
 
-// ===== Nav panel (replaces tabs) =====
-let navBar = null;
-let btnBack = null;
-let btnPrev = null;
-let btnNext = null;
-
-// ===== blob for TG iOS (only current) =====
+// Blob (iOS helper)
 let currentBlobUrl = null;
-let blobLoading = false;
+let loadingBlob = false;
 
-// ===== preview generator (single hidden decoder, NOT in cards) =====
-let previewDecoder = null;
+// Toolbar integration (replace tabs with our panel)
+let toolbarEl = null;
+let tabsToHide = [];
+let videoNavEl = null;
 
-// ============================================================
-// INIT
-// ============================================================
-
-export function initVideo(refs, callbacks = {}) {
-  overlayEl = refs?.overlayEl || null;
-  listEl = refs?.listEl || null;
-  emptyEl = refs?.emptyEl || null;
-
-  // toolbar / tabs host
-  toolbarEl = refs?.toolbarEl || document.querySelector(".viewer-toolbar") || null;
-  tab3dBtn = refs?.tab3dBtn || null;
-  tabSchemeBtn = refs?.tabSchemeBtn || null;
-  tabVideoBtn = refs?.tabVideoBtn || null;
-
-  onPlayCb = callbacks.onPlay || null;
-  onPauseCb = callbacks.onPause || null;
-
-  if (!overlayEl || !listEl) {
-    console.error("initVideo: overlayEl/listEl not provided");
-    return;
-  }
-
-  ensurePlayerDom();
-  ensureNavBar();
-
-  // старт всегда в cards mode
-  showCardsMode(true);
-}
-
-// ============================================================
-// HELPERS
-// ============================================================
+/* =========================
+   Utils
+   ========================= */
 
 function isIOS() {
   const ua = navigator.userAgent || "";
@@ -114,78 +74,117 @@ function warmCache(url) {
   } catch (e) {}
 }
 
-function setLoading(on) {
-  if (!playerLoading) return;
-  playerLoading.style.display = on ? "flex" : "none";
-}
-
-function revokeBlob() {
+function revokeCurrentBlob() {
   if (currentBlobUrl) {
     try { URL.revokeObjectURL(currentBlobUrl); } catch (e) {}
     currentBlobUrl = null;
   }
 }
 
-function hideTabsShowNav(showNav) {
-  // табы (кнопки режимов)
-  if (tab3dBtn) tab3dBtn.style.display = showNav ? "none" : "";
-  if (tabSchemeBtn) tabSchemeBtn.style.display = showNav ? "none" : "";
-  if (tabVideoBtn) tabVideoBtn.style.display = showNav ? "none" : "";
-
-  // наша панель
-  if (navBar) navBar.style.display = showNav ? "flex" : "none";
+function modIndex(i) {
+  if (!videoList || videoList.length === 0) return 0;
+  return (i + videoList.length) % videoList.length;
 }
 
-function showCardsMode(force = false) {
-  if (!force && !isPlayerMode) return;
+/* =========================
+   Toolbar / Nav panel
+   ========================= */
 
-  isPlayerMode = false;
-  if (listEl) listEl.style.display = "grid";
-  if (playerWrap) playerWrap.style.display = "none";
+function ensureToolbar() {
+  if (toolbarEl) return;
 
-  hideTabsShowNav(false);
+  // viewer.js sometimes sets it, but we also find it ourselves
+  toolbarEl = document.querySelector(".viewer-toolbar") || null;
+  if (!toolbarEl) return;
 
-  // стоп и очистка плеера
-  if (playerVideo) {
-    try { playerVideo.pause(); } catch (e) {}
-    try {
-      playerVideo.removeAttribute("src");
-      playerVideo.load();
-    } catch (e) {}
-  }
-  revokeBlob();
-  blobLoading = false;
+  // find tab buttons by text (robust enough for your UI)
+  const btns = Array.from(toolbarEl.querySelectorAll("button, .btn, .tab, [role='button']"));
+  const tabTexts = new Set(["3D", "3Д", "Построение", "Видео", "Video"]);
+  tabsToHide = btns.filter((b) => {
+    const t = (b.textContent || "").trim();
+    return tabTexts.has(t);
+  });
 
-  // viewer.js пусть снимет video-playing при необходимости
-  document.body.classList.remove("video-playing");
+  // create nav panel (hidden by default)
+  videoNavEl = document.createElement("div");
+  videoNavEl.className = "video-nav-panel";
+  videoNavEl.style.cssText = `
+    display: none;
+    width: 100%;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 8px;
+    box-sizing: border-box;
+  `;
+
+  const mkBtn = (label) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.style.cssText = `
+      appearance: none;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.92);
+      border-radius: 999px;
+      padding: 10px 14px;
+      font: 600 14px/1 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    `;
+    return b;
+  };
+
+  const btnBack = mkBtn("⬅ К карточкам");
+  const btnPrev = mkBtn("⏮");
+  const btnNext = mkBtn("⏭");
+
+  btnBack.addEventListener("click", () => {
+    closePlayerToCards();
+  });
+  btnPrev.addEventListener("click", () => {
+    if (!isPlayerOpen) return;
+    openByIndex(modIndex(currentIndex - 1), /*autoplay*/ false);
+  });
+  btnNext.addEventListener("click", () => {
+    if (!isPlayerOpen) return;
+    openByIndex(modIndex(currentIndex + 1), /*autoplay*/ false);
+  });
+
+  videoNavEl.appendChild(btnBack);
+  videoNavEl.appendChild(btnPrev);
+  videoNavEl.appendChild(btnNext);
+
+  // Put panel into toolbar (same container as tabs)
+  toolbarEl.appendChild(videoNavEl);
 }
 
-function showPlayerMode() {
-  isPlayerMode = true;
-
-  if (listEl) listEl.style.display = "none";
-  if (playerWrap) playerWrap.style.display = "flex";
-
-  // ВАЖНО: табы скрываем сразу, а панель покажем только на pause
-  hideTabsShowNav(true);
-  setNavVisible(false);
+function setTabsVisible(visible) {
+  ensureToolbar();
+  if (!tabsToHide || !tabsToHide.length) return;
+  tabsToHide.forEach((b) => {
+    b.style.display = visible ? "" : "none";
+  });
 }
 
-function setNavVisible(visible) {
-  if (!navBar) return;
-  // панель видна только когда paused
-  navBar.style.visibility = visible ? "visible" : "hidden";
-  navBar.style.pointerEvents = visible ? "auto" : "none";
+function setVideoNavVisible(visible) {
+  ensureToolbar();
+  if (!videoNavEl) return;
+  videoNavEl.style.display = visible ? "flex" : "none";
 }
 
-// ============================================================
-// PLAYER DOM
-// ============================================================
+/* =========================
+   Player DOM
+   ========================= */
 
 function ensurePlayerDom() {
+  if (!overlayEl) return;
   if (playerWrap) return;
 
-  // контейнер занимает всю вкладку (как 3D/Схема), внутри overlayEl
+  // IMPORTANT: we keep player INSIDE overlayEl so it occupies "tab area" like 3D/scheme
+  // and respects your layout/safe area.
   playerWrap = document.createElement("div");
   playerWrap.className = "video-player-wrap";
   playerWrap.style.cssText = `
@@ -195,20 +194,9 @@ function ensurePlayerDom() {
     align-items: center;
     justify-content: center;
     background: #000;
-    overflow: hidden;
   `;
 
   playerVideo = document.createElement("video");
-  playerVideo.preload = "metadata";
-  playerVideo.setAttribute("playsinline", "");
-  playerVideo.setAttribute("webkit-playsinline", "");
-  playerVideo.playsInline = true;
-
-  // native controls: всегда есть, но UI будет вести себя так:
-  // - когда играет: мы прячем нашу панель, controls остаются нативные
-  // - когда пауза: показываем нашу панель, controls нативные видны (пользователь жмёт play)
-  playerVideo.controls = true;
-
   playerVideo.style.cssText = `
     width: 100%;
     height: 100%;
@@ -217,246 +205,352 @@ function ensurePlayerDom() {
     display: block;
   `;
 
-  // таймлайн hack как в эталоне
-  playerVideo.addEventListener("loadedmetadata", () => {
-    try {
-      playerVideo.currentTime = 0.001;
-      playerVideo.currentTime = 0;
-    } catch (e) {}
-  });
+  playerVideo.preload = "metadata";
+  playerVideo.setAttribute("playsinline", "");
+  playerVideo.setAttribute("webkit-playsinline", "");
+  playerVideo.playsInline = true;
 
-  playerLoading = document.createElement("div");
-  playerLoading.style.cssText = `
-    position: absolute;
-    inset: 0;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font: 600 14px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial;
-    background: rgba(0,0,0,0.35);
-  `;
-  playerLoading.textContent = "Загрузка…";
+  // native controls always ON (you wanted native buttons)
+  playerVideo.controls = true;
 
-  // events
+  // metadata hack (as in your working file)
+  playerVideo.addEventListener(
+    "loadedmetadata",
+    () => {
+      try {
+        playerVideo.currentTime = 0.001;
+        playerVideo.currentTime = 0;
+      } catch (e) {}
+    },
+    { passive: true }
+  );
+
+  // When playing: hide nav panel (and tabs are already hidden in player mode)
   playerVideo.addEventListener("play", () => {
-    setLoading(false);
+    // hide panel while playing
+    setVideoNavVisible(false);
 
-    // Панель СКРЫТА на play
-    setNavVisible(false);
-
-    // viewer.js скрывает основной UI
+    // If viewer.js hides UI via callback — ok.
     if (onPlayCb) onPlayCb();
+
     document.body.classList.add("video-playing");
+
+    // Try unmute after start (iOS policy)
+    Promise.resolve().then(() => {
+      try { playerVideo.muted = false; } catch (e) {}
+    });
   });
 
+  // When paused: SHOW nav panel (spec), keep tabs hidden
   playerVideo.addEventListener("pause", () => {
-    // Панель ВИДНА только на pause
-    if (isPlayerMode) setNavVisible(true);
-
-    // viewer UI остаётся скрыт (мы не возвращаем табы)
-    if (onPauseCb) onPauseCb();
     document.body.classList.remove("video-playing");
+
+    // viewer.js onPauseCb обычно показывает UI.
+    // Нам нужно: toolbar видим, но табы скрыты, и показываем наш nav.
+    if (onPauseCb) onPauseCb();
+
+    setTabsVisible(false);
+    setVideoNavVisible(true);
   });
 
-  playerVideo.addEventListener("waiting", () => setLoading(true));
-  playerVideo.addEventListener("playing", () => setLoading(false));
-  playerVideo.addEventListener("canplay", () => setLoading(false));
-
+  // If errors: still allow user to exit via nav (pause usually happens)
   playerVideo.addEventListener("error", () => {
-    setLoading(false);
+    // Force UI visible so user can press "К карточкам"
+    if (onPauseCb) onPauseCb();
+    setTabsVisible(false);
+    setVideoNavVisible(true);
+
     console.error("[video] player error:", playerVideo.error);
-    // на паузе панель всё равно покажем, чтобы можно было выйти
-    if (isPlayerMode) setNavVisible(true);
   });
 
   playerWrap.appendChild(playerVideo);
-  playerWrap.appendChild(playerLoading);
   overlayEl.appendChild(playerWrap);
 }
 
-// ============================================================
-// NAV BAR (replaces tabs location)
-// ============================================================
+/* =========================
+   iOS blob helper (from your working file)
+   ========================= */
 
-function ensureNavBar() {
-  if (navBar) return;
+async function loadBlobForCurrent(srcUrl) {
+  if (!playerVideo) return;
+  if (!srcUrl) return;
 
-  if (!toolbarEl) {
-    console.warn("[video] toolbarEl not found; nav bar will not mount");
-    return;
+  if (loadingBlob) return;
+  loadingBlob = true;
+
+  try {
+    // if already blob: do nothing
+    if (playerVideo.src && playerVideo.src.startsWith("blob:")) return;
+
+    const resp = await fetch(srcUrl);
+    const blob = await resp.blob();
+
+    revokeCurrentBlob();
+    const objUrl = URL.createObjectURL(blob);
+    currentBlobUrl = objUrl;
+
+    const wasPaused = playerVideo.paused;
+    const wasTime = (() => {
+      try { return playerVideo.currentTime || 0; } catch (e) { return 0; }
+    })();
+
+    playerVideo.src = objUrl;
+    playerVideo.load();
+
+    playerVideo.addEventListener(
+      "loadedmetadata",
+      () => {
+        try {
+          playerVideo.currentTime = 0.001;
+          playerVideo.currentTime = 0;
+        } catch (e) {}
+
+        try {
+          if (wasTime > 0.2) playerVideo.currentTime = wasTime;
+        } catch (e) {}
+
+        // If was playing — try continue (muted)
+        if (!wasPaused) {
+          const p = playerVideo.play();
+          if (p && typeof p.catch === "function") p.catch(() => {});
+        }
+      },
+      { once: true, passive: true }
+    );
+  } catch (e) {
+    // ignore
+  } finally {
+    loadingBlob = false;
+  }
+}
+
+/* =========================
+   Open / Close Player
+   ========================= */
+
+function showCardsMode() {
+  isPlayerOpen = false;
+
+  if (playerWrap) playerWrap.style.display = "none";
+  if (listEl) listEl.style.display = "grid";
+
+  // restore tabs
+  setVideoNavVisible(false);
+  setTabsVisible(true);
+
+  document.body.classList.remove("video-playing");
+
+  // viewer.js: show UI
+  if (onPauseCb) onPauseCb();
+}
+
+function showPlayerMode() {
+  isPlayerOpen = true;
+
+  if (listEl) listEl.style.display = "none";
+  if (playerWrap) playerWrap.style.display = "flex";
+
+  // tabs hidden in player mode always
+  setTabsVisible(false);
+  // nav panel visible only on pause; start hidden until pause
+  setVideoNavVisible(false);
+}
+
+function openByIndex(idx, autoplay = true) {
+  if (!active) return;
+  if (!videoList || !videoList.length) return;
+
+  ensurePlayerDom();
+  ensureToolbar();
+
+  idx = modIndex(idx);
+  currentIndex = idx;
+
+  const raw = videoList[currentIndex];
+  const srcUrl = withInitData(raw);
+
+  // warm cache (not affecting play)
+  warmCache(srcUrl);
+
+  showPlayerMode();
+
+  // CRITICAL iOS: play must be called from user gesture, no awaits before it
+  // We do: set src, muted, play()
+  try {
+    playerVideo.muted = true;
+    playerVideo.src = srcUrl;
+    playerVideo.load();
+  } catch (e) {}
+
+  // When opening:
+  // - if autoplay requested: try play muted
+  // - if not: pause (user will press native play), but show nav immediately
+  if (autoplay) {
+    const p = playerVideo.play();
+    if (p && typeof p.catch === "function") {
+      p.catch(() => {
+        // autoplay rejected -> show nav (paused state), user can hit play native
+        try { playerVideo.pause(); } catch (e) {}
+        if (onPauseCb) onPauseCb();
+        setTabsVisible(false);
+        setVideoNavVisible(true);
+      });
+    }
+  } else {
+    try { playerVideo.pause(); } catch (e) {}
+    if (onPauseCb) onPauseCb();
+    setTabsVisible(false);
+    setVideoNavVisible(true);
   }
 
-  navBar = document.createElement("div");
-  navBar.className = "video-nav-bar";
-  navBar.style.cssText = `
-    display: none;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    width: 100%;
-  `;
+  // iOS: load blob in parallel (do NOT await)
+  if (isIOS()) {
+    loadBlobForCurrent(srcUrl);
+  }
 
-  const mkBtn = (text) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.textContent = text;
-    b.style.cssText = `
-      appearance: none;
-      border: 1px solid rgba(255,255,255,0.18);
-      background: rgba(255,255,255,0.08);
-      color: rgba(255,255,255,0.95);
-      border-radius: 999px;
-      padding: 10px 12px;
-      font: 600 14px/1 system-ui, -apple-system, Segoe UI, Roboto, Arial;
-      cursor: pointer;
-      user-select: none;
-      -webkit-tap-highlight-color: transparent;
-    `;
-    return b;
+  // viewer.js: hide UI while playing (it will re-show on pause)
+  // We still call onPlayCb now to be consistent (it hides toolbar/status),
+  // but pause-handler will bring toolbar back with our nav.
+  if (onPlayCb) onPlayCb();
+  document.body.classList.add("video-playing");
+}
+
+function closePlayerToCards() {
+  // stop and cleanup
+  if (playerVideo) {
+    try { playerVideo.pause(); } catch (e) {}
+    try {
+      playerVideo.removeAttribute("src");
+      playerVideo.load();
+    } catch (e) {}
+  }
+
+  revokeCurrentBlob();
+  loadingBlob = false;
+
+  showCardsMode();
+}
+
+/* =========================
+   Cards (16:9 grid) + preview extraction
+   NO <video> in cards:
+   - we create an offscreen video ONLY to grab first frame -> img src
+   ========================= */
+
+function styleCardsGrid() {
+  if (!listEl) return;
+
+  // Grid 2 columns on wide, 1 on narrow
+  listEl.style.display = "grid";
+  listEl.style.gridTemplateColumns = "repeat(1, minmax(0, 1fr))";
+  listEl.style.gap = "12px";
+  listEl.style.padding = "12px";
+  listEl.style.boxSizing = "border-box";
+  listEl.style.overflowY = "auto";
+  listEl.style.webkitOverflowScrolling = "touch";
+
+  // Use media query-like behavior via JS resize
+  const applyCols = () => {
+    const w = listEl.clientWidth || window.innerWidth || 0;
+    if (w >= 680) listEl.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+    else listEl.style.gridTemplateColumns = "repeat(1, minmax(0, 1fr))";
+  };
+  applyCols();
+  window.addEventListener("resize", applyCols, { passive: true });
+}
+
+function extractFirstFrameToImg(srcUrl, imgEl) {
+  // Offscreen video: not in cards, not visible
+  // NOTE: if server blocks CORS, canvas may be tainted -> we just fail silently.
+  const v = document.createElement("video");
+  v.preload = "metadata";
+  v.muted = true;
+  v.setAttribute("playsinline", "");
+  v.setAttribute("webkit-playsinline", "");
+  v.playsInline = true;
+
+  // Try to enable canvas extraction when possible
+  // If same-origin, ok. If not, may fail — that's fine.
+  v.crossOrigin = "anonymous";
+
+  v.src = srcUrl;
+
+  const cleanup = () => {
+    try { v.pause(); } catch (e) {}
+    v.removeAttribute("src");
+    try { v.load(); } catch (e) {}
   };
 
-  btnBack = mkBtn("⬅ К карточкам");
-  btnPrev = mkBtn("⏮");
-  btnNext = mkBtn("⏭");
-
-  btnBack.addEventListener("click", () => {
-    closeToCards();
-  });
-
-  btnPrev.addEventListener("click", () => {
-    // переключение по панели допустимо только когда paused (панель видима)
-    if (!isPlayerMode) return;
-    switchTo(modIndex(currentIndex - 1), { autoplay: false });
-  });
-
-  btnNext.addEventListener("click", () => {
-    if (!isPlayerMode) return;
-    switchTo(modIndex(currentIndex + 1), { autoplay: false });
-  });
-
-  navBar.appendChild(btnBack);
-  navBar.appendChild(btnPrev);
-  navBar.appendChild(btnNext);
-
-  // Вставляем в toolbarEl в КОНЕЦ (обычно там ряд табов)
-  toolbarEl.appendChild(navBar);
-
-  // по умолчанию спрятана
-  setNavVisible(false);
-}
-
-function modIndex(i) {
-  if (!videoList || videoList.length === 0) return -1;
-  return (i + videoList.length) % videoList.length;
-}
-
-// ============================================================
-// PREVIEWS (карточки без <video>)
-// ============================================================
-
-function ensurePreviewDecoder() {
-  if (previewDecoder) return;
-
-  previewDecoder = document.createElement("video");
-  previewDecoder.muted = true;
-  previewDecoder.preload = "metadata";
-  previewDecoder.setAttribute("playsinline", "");
-  previewDecoder.setAttribute("webkit-playsinline", "");
-  previewDecoder.playsInline = true;
-  previewDecoder.controls = false;
-
-  // не в DOM — просто decoder
-}
-
-async function getFirstFrameDataUrl(srcUrl) {
-  ensurePreviewDecoder();
-  const v = previewDecoder;
-
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (val) => {
-      if (done) return;
-      done = true;
-      cleanup();
-      resolve(val);
-    };
-
-    const cleanup = () => {
-      v.onloadedmetadata = null;
-      v.onloadeddata = null;
-      v.onseeked = null;
-      v.onerror = null;
-    };
-
-    v.onerror = () => finish(null);
-
-    v.onloadedmetadata = () => {
-      // пробуем сместиться на микрофрейм
-      try { v.currentTime = 0.05; } catch (e) {
-        // если нельзя seek — попробуем loadeddata
-      }
-    };
-
-    v.onloadeddata = () => {
-      // если нет seek — пробуем сразу рисовать
-      snap();
-    };
-
-    v.onseeked = () => {
-      snap();
-    };
-
-    const snap = () => {
-      try {
-        const w = v.videoWidth || 0;
-        const h = v.videoHeight || 0;
-        if (!w || !h) return finish(null);
-
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(v, 0, 0, w, h);
-
-        // может упасть из-за CORS — тогда вернём null
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
-        finish(dataUrl);
-      } catch (e) {
-        finish(null);
-      }
-    };
-
+  const snap = () => {
     try {
-      v.src = srcUrl;
-      v.load();
-    } catch (e) {
-      finish(null);
-    }
+      const w = v.videoWidth || 0;
+      const h = v.videoHeight || 0;
+      if (!w || !h) {
+        cleanup();
+        return;
+      }
 
-    // safety timeout
-    setTimeout(() => finish(null), 2500);
-  });
+      const c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(v, 0, 0, w, h);
+
+      const dataUrl = c.toDataURL("image/jpeg", 0.82);
+      if (dataUrl && dataUrl.startsWith("data:image/")) {
+        imgEl.src = dataUrl;
+      }
+    } catch (e) {
+      // ignore
+    } finally {
+      cleanup();
+    }
+  };
+
+  // On some iOS, need loadeddata/canplay + small seek
+  v.addEventListener(
+    "loadeddata",
+    () => {
+      try {
+        v.currentTime = 0.05;
+      } catch (e) {}
+      // give a tick for frame
+      setTimeout(snap, 60);
+    },
+    { once: true, passive: true }
+  );
+
+  v.addEventListener(
+    "error",
+    () => {
+      cleanup();
+    },
+    { once: true, passive: true }
+  );
 }
 
-function createCard(url, index) {
+function createCard(url, idx) {
   const srcUrl = withInitData(url);
 
   const wrap = document.createElement("div");
   wrap.className = "video-card";
   wrap.style.cssText = `
+    position: relative;
     width: 100%;
     aspect-ratio: 16 / 9;
-    border-radius: 12px;
+    border-radius: 14px;
     overflow: hidden;
-    position: relative;
-    background: #111;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
     cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
+    user-select: none;
   `;
 
+  // Preview image (NOT video)
   const img = document.createElement("img");
-  img.alt = `Видео ${index + 1}`;
+  img.alt = `Видео ${idx + 1}`;
+  img.decoding = "async";
+  img.loading = "lazy";
   img.style.cssText = `
     width: 100%;
     height: 100%;
@@ -464,9 +558,11 @@ function createCard(url, index) {
     display: block;
     background: #000;
   `;
-  // пока грузится — оставим пустым (фон виден)
+
+  // Fallback placeholder (black)
   img.src = "";
 
+  // Play overlay
   const icon = document.createElement("div");
   icon.style.cssText = `
     position: absolute;
@@ -478,16 +574,18 @@ function createCard(url, index) {
   `;
   icon.innerHTML = `
     <div style="
-      width: 56px; height: 56px;
+      width: 62px; height: 62px;
       border-radius: 999px;
       background: rgba(0,0,0,0.45);
       display:flex; align-items:center; justify-content:center;
+      border: 1px solid rgba(255,255,255,0.12);
+      backdrop-filter: blur(2px);
     ">
       <div style="
         width:0; height:0;
-        border-top:10px solid transparent;
-        border-bottom:10px solid transparent;
-        border-left:16px solid #fff;
+        border-top:11px solid transparent;
+        border-bottom:11px solid transparent;
+        border-left:18px solid #fff;
         margin-left: 4px;
       "></div>
     </div>
@@ -496,177 +594,64 @@ function createCard(url, index) {
   wrap.appendChild(img);
   wrap.appendChild(icon);
 
+  // Click -> open player and autoplay (gesture-safe)
   wrap.addEventListener("click", () => {
     if (!active) return;
-    openFromCards(index);
+    openByIndex(idx, /*autoplay*/ true);
   });
 
-  // прогрев кеша не мешает
+  // Warm cache (ok)
   warmCache(srcUrl);
 
-  // асинхронно пробуем первый кадр
-  getFirstFrameDataUrl(srcUrl).then((dataUrl) => {
-    if (dataUrl) img.src = dataUrl;
-  });
+  // Extract preview in background
+  extractFirstFrameToImg(srcUrl, img);
 
-  return { wrap, url, srcUrl };
+  return { wrap, img, url, srcUrl };
 }
 
 function render() {
   if (!listEl) return;
 
   listEl.innerHTML = "";
+  cards = [];
+  currentIndex = 0;
 
-  // сетка карточек
-  listEl.style.display = "grid";
-  listEl.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
-  listEl.style.gap = "12px";
-  listEl.style.padding = "12px";
-  listEl.style.overflowY = "auto";
-  listEl.style.webkitOverflowScrolling = "touch";
+  styleCardsGrid();
 
   const has = Array.isArray(videoList) && videoList.length > 0;
   if (emptyEl) emptyEl.style.display = has ? "none" : "block";
   if (!has) return;
 
-  srcList = videoList.map(withInitData);
-
   videoList.forEach((url, idx) => {
     const card = createCard(url, idx);
+    cards.push(card);
     listEl.appendChild(card.wrap);
   });
 }
 
-// ============================================================
-// OPEN / SWITCH / CLOSE
-// ============================================================
+/* =========================
+   Public API
+   ========================= */
 
-function openFromCards(index) {
-  showPlayerMode();
-  switchTo(index, { autoplay: true });
-}
+export function initVideo(refs, callbacks = {}) {
+  overlayEl = refs?.overlayEl || null;
+  listEl = refs?.listEl || null;
+  emptyEl = refs?.emptyEl || null;
 
-function closeToCards() {
-  showCardsMode(true);
-  // когда закрыли — viewer UI можно показать (но viewer.js у тебя решает сам)
-  // мы ничего не ломаем, только выключаем свой режим
-}
+  onPlayCb = callbacks.onPlay || null;
+  onPauseCb = callbacks.onPause || null;
 
-function switchTo(index, { autoplay }) {
-  if (!playerVideo) return;
-  if (!videoList || videoList.length === 0) return;
-
-  if (index < 0) index = videoList.length - 1;
-  if (index >= videoList.length) index = 0;
-
-  currentIndex = index;
-
-  // очистка blob прошлого видео
-  revokeBlob();
-  blobLoading = false;
-
-  const srcUrl = srcList[index] || withInitData(videoList[index]);
-
-  // IMPORTANT for iOS: play() must be in the same gesture, no await before it.
-  playerVideo.muted = true;
-  playerVideo.src = srcUrl;
-  playerVideo.load();
-
-  setLoading(true);
-
-  if (autoplay) {
-    // autoplay attempt (muted) immediately
-    const p = playerVideo.play();
-
-    // прогрев кэша после старта
-    warmCache(srcUrl);
-
-    if (p && typeof p.catch === "function") {
-      p.catch((e) => {
-        // если отказано — оставляем paused, панель появится (потому что paused)
-        setLoading(false);
-        console.warn("[video] play() rejected:", e);
-        // показать панель, чтобы можно было выйти/переключить
-        setNavVisible(true);
-      });
-    }
-
-    // unmute only after real playing
-    const unmuteOnce = () => {
-      playerVideo.removeEventListener("playing", unmuteOnce);
-      try { playerVideo.muted = false; } catch (e) {}
-    };
-    playerVideo.addEventListener("playing", unmuteOnce);
-  } else {
-    // без autoplay: держим paused, но готовы к play нативной кнопкой
-    try { playerVideo.pause(); } catch (e) {}
-    setLoading(false);
-    setNavVisible(true);
+  if (!overlayEl || !listEl) {
+    console.error("initVideo: overlayEl/listEl not provided");
+    return;
   }
 
-  // iOS helper: blob after start (or after load) to avoid "crossed play" in TG iOS
-  if (isIOS()) {
-    // НЕ await
-    setTimeout(() => loadBlobAfterStart(srcUrl), 0);
-  }
+  ensureToolbar();
+  ensurePlayerDom();
+
+  // start in cards mode
+  showCardsMode();
 }
-
-async function loadBlobAfterStart(srcUrl) {
-  if (!playerVideo) return;
-  if (!srcUrl) return;
-  if (blobLoading) return;
-  blobLoading = true;
-
-  try {
-    // если уже blob — не делаем
-    if (playerVideo.src && playerVideo.src.startsWith("blob:")) return;
-
-    const resp = await fetch(srcUrl);
-    const blob = await resp.blob();
-
-    revokeBlob();
-    const objUrl = URL.createObjectURL(blob);
-    currentBlobUrl = objUrl;
-
-    // сохраняем состояние
-    const wasPaused = playerVideo.paused;
-    let t = 0;
-    try { t = playerVideo.currentTime || 0; } catch (e) {}
-
-    playerVideo.src = objUrl;
-    playerVideo.load();
-
-    // восстановим time и поведение
-    playerVideo.addEventListener(
-      "loadedmetadata",
-      () => {
-        try {
-          playerVideo.currentTime = 0.001;
-          playerVideo.currentTime = 0;
-        } catch (e) {}
-
-        try {
-          if (t > 0.2) playerVideo.currentTime = t;
-        } catch (e) {}
-
-        if (!wasPaused) {
-          // если было playing — попробуем продолжить (muted не трогаем)
-          const p = playerVideo.play();
-          if (p && typeof p.catch === "function") p.catch(() => {});
-        }
-      },
-      { once: true, passive: true }
-    );
-  } catch (e) {
-    // игнор — остаёмся на direct url
-  } finally {
-    blobLoading = false;
-  }
-}
-
-// ============================================================
-// PUBLIC API (viewer.js)
-// ============================================================
 
 export function activateVideo() {
   active = true;
@@ -674,22 +659,36 @@ export function activateVideo() {
 
 export function setVideoList(list) {
   videoList = Array.isArray(list) ? list : (list ? [list] : []);
-  currentIndex = -1;
-
+  currentIndex = 0;
   render();
 
-  // всегда в cards mode при обновлении списка
-  showCardsMode(true);
+  // If no videos, ensure player closed
+  if (!videoList.length) {
+    closePlayerToCards();
+  }
 }
 
 export function deactivateVideo() {
   active = false;
 
-  // при уходе из вкладки — закрываем плеер в карточки
-  if (isPlayerMode) {
-    showCardsMode(true);
+  // Leaving video tab => close player to cards (spec)
+  if (isPlayerOpen) {
+    closePlayerToCards();
   }
 
-  // safety
+  // Safety cleanup
   document.body.classList.remove("video-playing");
+  revokeCurrentBlob();
+
+  if (playerVideo) {
+    try {
+      playerVideo.pause();
+      playerVideo.removeAttribute("src");
+      playerVideo.load();
+    } catch (e) {}
+  }
+
+  // restore tabs if user left tab
+  setVideoNavVisible(false);
+  setTabsVisible(true);
 }
