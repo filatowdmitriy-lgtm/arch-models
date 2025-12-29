@@ -1,19 +1,22 @@
 // js/video.js
 //
-// FINAL VERSION
-// Base: Variant B (iOS-safe streaming)
-// UX:
-// - Cards 16:9 with preview (first frame)
-// - Click card -> fullscreen player
-// - Stream play (NOT full download)
-// - Pause DOES NOT exit
-// - Video navigation panel handled by viewer.js (onPause / onPlay)
+// BASE: Variant B (iOS-safe autoplay attempt on direct URL)
+// FIXES:
+// 1) NO blob swap for playback (prevents full download caused by fetch->blob->objectURL)
+// 2) Toolbar/UI callbacks fire ONLY on real play/pause (not on open), so UI won't disappear forever
+// 3) Two modes: Cards (grid 16:9 preview) and Player (single fullscreen video)
+// 4) Expose nav API for viewer-panel buttons: videoExitToCards / videoPrev / videoNext
+//
+// NOTE about previews:
+// - Cards do NOT contain <video>. We render <canvas> preview.
+// - Preview is generated via ONE hidden <video> (offscreen) -> draw first frame to canvas.
+// - If CORS prevents drawing (tainted canvas), we keep placeholder.
+//
+// Streaming requirement:
+// - true streaming depends on server Range support + mp4 fast-start.
+// - this file ensures we DO NOT break streaming by swapping to blob.
 
 import { cachedFetch } from "./cache/cachedFetch.js";
-
-/* =========================
-   STATE
-   ========================= */
 
 let overlayEl = null;
 let listEl = null;
@@ -26,32 +29,27 @@ let onPauseCb = null;
 let videoList = [];
 let currentIndex = 0;
 
-let cards = [];
+let cards = []; // { wrap, canvas, url, srcUrl }
 
 let playerWrap = null;
 let playerVideo = null;
 
 let isOpen = false;
 
-/* =========================
-   UTILS
-   ========================= */
+// ===== preview worker (single hidden video) =====
+let previewVideo = null;
+let previewBusy = false;
+let previewQueue = [];
 
-function isIOS() {
-  const ua = navigator.userAgent || "";
-  return (
-    /iPhone|iPad|iPod/i.test(ua) ||
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
-  );
-}
+// =========================
+// Utils
+// =========================
 
 function withInitData(url) {
   try {
     if (!window.TG_INIT_DATA) return url;
     const u = new URL(url);
-    if (!u.searchParams.get("initData")) {
-      u.searchParams.set("initData", window.TG_INIT_DATA);
-    }
+    if (!u.searchParams.get("initData")) u.searchParams.set("initData", window.TG_INIT_DATA);
     return u.toString();
   } catch {
     return url;
@@ -59,19 +57,29 @@ function withInitData(url) {
 }
 
 function warmCache(url) {
-  try {
-    cachedFetch(url).catch(() => {});
-  } catch {}
+  try { cachedFetch(url).catch(() => {}); } catch {}
 }
 
-/* =========================
-   LIST / PLAYER VISIBILITY
-   ========================= */
+function safePause() {
+  if (!playerVideo) return;
+  try { playerVideo.pause(); } catch {}
+}
+
+function setBodyPlaying(on) {
+  document.body.classList.toggle("video-playing", !!on);
+}
+
+// =========================
+// Mode switch
+// =========================
 
 function showList() {
   isOpen = false;
   if (playerWrap) playerWrap.style.display = "none";
-  if (listEl) listEl.style.display = "flex";
+  if (listEl) listEl.style.display = "grid";
+  setBodyPlaying(false);
+  // viewer may show standard tabs in "cards mode"
+  if (onPauseCb) onPauseCb();
 }
 
 function showPlayer() {
@@ -80,14 +88,16 @@ function showPlayer() {
   if (playerWrap) playerWrap.style.display = "flex";
 }
 
-/* =========================
-   PLAYER
-   ========================= */
+// =========================
+// Player DOM
+// =========================
 
-function ensurePlayer() {
+function ensurePlayerDom() {
+  if (!overlayEl) return;
   if (playerWrap) return;
 
   playerWrap = document.createElement("div");
+  playerWrap.className = "video-player-wrap";
   playerWrap.style.cssText = `
     position:absolute;
     inset:0;
@@ -103,15 +113,15 @@ function ensurePlayer() {
   playerVideo.setAttribute("playsinline", "");
   playerVideo.setAttribute("webkit-playsinline", "");
   playerVideo.playsInline = true;
-
   playerVideo.style.cssText = `
     width:100%;
     height:100%;
     object-fit:contain;
     background:#000;
+    display:block;
   `;
 
-  // timeline hack (как эталон)
+  // timeline hack
   playerVideo.addEventListener("loadedmetadata", () => {
     try {
       playerVideo.currentTime = 0.001;
@@ -119,102 +129,231 @@ function ensurePlayer() {
     } catch {}
   });
 
-  // PLAY
+  // IMPORTANT: UI callbacks tied to real media state
   playerVideo.addEventListener("play", () => {
-    // unmute AFTER real start
+    // during play -> hide panel (viewer) / show only native controls
+    setBodyPlaying(true);
+    if (onPlayCb) onPlayCb();
+
+    // unmute after actual start
     Promise.resolve().then(() => {
       try { playerVideo.muted = false; } catch {}
     });
-
-    if (onPlayCb) onPlayCb();
-    document.body.classList.add("video-playing");
   });
 
-  // PAUSE — НЕ ВЫХОДИМ
   playerVideo.addEventListener("pause", () => {
+    // paused -> show panel (viewer)
+    setBodyPlaying(false);
     if (onPauseCb) onPauseCb();
-    document.body.classList.remove("video-playing");
+  });
+
+  playerVideo.addEventListener("ended", () => {
+    setBodyPlaying(false);
+    if (onPauseCb) onPauseCb();
+  });
+
+  playerVideo.addEventListener("error", () => {
+    const err = playerVideo.error;
+    console.error("[video] player error:", err);
+    // show panel so user can exit
+    setBodyPlaying(false);
+    if (onPauseCb) onPauseCb();
   });
 
   playerWrap.appendChild(playerVideo);
   overlayEl.appendChild(playerWrap);
 }
 
-/* =========================
-   PLAYBACK
-   ========================= */
+// =========================
+// Playback (NO BLOB SWAP)
+// =========================
 
-function setSource(index) {
-  currentIndex = index;
+function setSourceForIndex(idx) {
+  if (!playerVideo) return;
 
-  const srcUrl = withInitData(videoList[currentIndex]);
+  currentIndex = idx;
+
+  const raw = videoList[currentIndex];
+  const srcUrl = withInitData(raw);
 
   warmCache(srcUrl);
 
-  playerVideo.muted = true; // iOS-safe
+  // iOS gesture safe: start muted
+  playerVideo.muted = true;
+
+  // direct URL => streaming if server supports ranges
   playerVideo.src = srcUrl;
   playerVideo.load();
 
-  // autoplay attempt
   const p = playerVideo.play();
-  if (p && p.catch) {
-    p.catch(() => {
-      // user can press play manually
+  if (p && typeof p.catch === "function") {
+    p.catch((e) => {
+      // IMPORTANT: do NOT hide UI forever if autoplay rejected
+      console.warn("[video] play() rejected:", e);
+      setBodyPlaying(false);
+      if (onPauseCb) onPauseCb(); // show panel so user can press native play
+      // leave controls visible: controls already true
     });
   }
 }
 
-function playByIndex(index) {
-  if (!active || !videoList.length) return;
+function openVideoByIndex(idx) {
+  if (!active) return;
+  if (!videoList || !videoList.length) return;
 
-  if (index < 0) index = videoList.length - 1;
-  if (index >= videoList.length) index = 0;
+  if (idx < 0) idx = videoList.length - 1;
+  if (idx >= videoList.length) idx = 0;
 
-  ensurePlayer();
+  ensurePlayerDom();
   showPlayer();
-  setSource(index);
+  setSourceForIndex(idx);
 }
 
-/* =========================
-   CARDS (PREVIEW)
-   ========================= */
+function closePlayerToCards() {
+  safePause();
+  if (playerVideo) {
+    try {
+      playerVideo.removeAttribute("src");
+      playerVideo.load();
+    } catch {}
+  }
+  showList();
+}
 
-function createCard(url, index) {
+// =========================
+// Preview generator (hidden video -> canvas)
+// =========================
+
+function ensurePreviewWorker() {
+  if (previewVideo) return;
+
+  previewVideo = document.createElement("video");
+  previewVideo.muted = true;
+  previewVideo.preload = "metadata";
+  previewVideo.setAttribute("playsinline", "");
+  previewVideo.setAttribute("webkit-playsinline", "");
+  previewVideo.playsInline = true;
+
+  // offscreen
+  previewVideo.style.position = "fixed";
+  previewVideo.style.left = "-99999px";
+  previewVideo.style.top = "-99999px";
+  previewVideo.style.width = "1px";
+  previewVideo.style.height = "1px";
+  previewVideo.style.opacity = "0";
+  previewVideo.style.pointerEvents = "none";
+
+  document.body.appendChild(previewVideo);
+}
+
+function enqueuePreview(card) {
+  previewQueue.push(card);
+  pumpPreviewQueue();
+}
+
+async function pumpPreviewQueue() {
+  if (previewBusy) return;
+  if (!previewQueue.length) return;
+
+  ensurePreviewWorker();
+  previewBusy = true;
+
+  const card = previewQueue.shift();
+  try {
+    await renderPreviewToCanvas(card);
+  } catch (e) {
+    // ignore
+  } finally {
+    previewBusy = false;
+    pumpPreviewQueue();
+  }
+}
+
+function waitOnce(el, ev) {
+  return new Promise((resolve) => {
+    const fn = () => {
+      el.removeEventListener(ev, fn);
+      resolve();
+    };
+    el.addEventListener(ev, fn, { once: true, passive: true });
+  });
+}
+
+async function renderPreviewToCanvas(card) {
+  if (!previewVideo) return;
+  if (!card || !card.canvas || !card.srcUrl) return;
+
+  // if already painted (avoid repeats)
+  if (card.__previewDone) return;
+  card.__previewDone = true;
+
+  previewVideo.src = card.srcUrl;
+  previewVideo.load();
+
+  // wait for data
+  await Promise.race([
+    waitOnce(previewVideo, "loadeddata"),
+    waitOnce(previewVideo, "canplay"),
+  ]);
+
+  // seek tiny bit to force first frame
+  try { previewVideo.currentTime = 0.001; } catch {}
+
+  // give browser a tick
+  await new Promise((r) => setTimeout(r, 30));
+
+  const c = card.canvas;
+  const ctx = c.getContext("2d");
+
+  const vw = previewVideo.videoWidth || 1280;
+  const vh = previewVideo.videoHeight || 720;
+
+  // canvas size same ratio as card
+  c.width = 1280;
+  c.height = 720;
+
+  // cover
+  const scale = Math.max(c.width / vw, c.height / vh);
+  const dw = vw * scale;
+  const dh = vh * scale;
+  const dx = (c.width - dw) / 2;
+  const dy = (c.height - dh) / 2;
+
+  try {
+    ctx.drawImage(previewVideo, dx, dy, dw, dh);
+  } catch (e) {
+    // CORS taint or decode error -> keep placeholder
+  }
+}
+
+// =========================
+// Cards rendering (16:9 grid, no <video> inside)
+// =========================
+
+function createCard(url, idx) {
   const srcUrl = withInitData(url);
 
   const wrap = document.createElement("div");
+  wrap.className = "video-card";
   wrap.style.cssText = `
     width:100%;
     aspect-ratio:16/9;
     border-radius:12px;
     overflow:hidden;
     position:relative;
+    background:#111;
+    cursor:pointer;
+  `;
+
+  const canvas = document.createElement("canvas");
+  canvas.style.cssText = `
+    width:100%;
+    height:100%;
+    display:block;
     background:#000;
   `;
 
-  // PREVIEW video (NOT interactive)
-  const preview = document.createElement("video");
-  preview.muted = true;
-  preview.preload = "metadata";
-  preview.src = srcUrl;
-  preview.setAttribute("playsinline", "");
-  preview.setAttribute("webkit-playsinline", "");
-  preview.playsInline = true;
-  preview.style.cssText = `
-    width:100%;
-    height:100%;
-    object-fit:cover;
-    pointer-events:none;
-  `;
-
-  preview.addEventListener("loadeddata", () => {
-    try {
-      preview.currentTime = 0.001;
-      preview.pause();
-    } catch {}
-  }, { once: true });
-
-  // play icon
+  // play icon overlay
   const icon = document.createElement("div");
   icon.style.cssText = `
     position:absolute;
@@ -226,8 +365,7 @@ function createCard(url, index) {
   `;
   icon.innerHTML = `
     <div style="
-      width:56px;height:56px;
-      border-radius:50%;
+      width:56px;height:56px;border-radius:999px;
       background:rgba(0,0,0,.45);
       display:flex;align-items:center;justify-content:center;
     ">
@@ -241,21 +379,25 @@ function createCard(url, index) {
     </div>
   `;
 
-  wrap.appendChild(preview);
+  wrap.appendChild(canvas);
   wrap.appendChild(icon);
 
   wrap.addEventListener("click", () => {
-    playByIndex(index);
+    if (!active) return;
+    openVideoByIndex(idx);
   });
 
+  const card = { wrap, canvas, url, srcUrl, __previewDone: false };
+
+  // cache warm (doesn't affect playback)
   warmCache(srcUrl);
 
-  return wrap;
-}
+  // enqueue preview render
+  // IMPORTANT: preview rendering may be blocked by CORS; then placeholder stays
+  enqueuePreview(card);
 
-/* =========================
-   RENDER
-   ========================= */
+  return card;
+}
 
 function render() {
   if (!listEl) return;
@@ -263,8 +405,9 @@ function render() {
   listEl.innerHTML = "";
   cards = [];
 
-  listEl.style.display = "flex";
-  listEl.style.flexDirection = "column";
+  // grid of cards
+  listEl.style.display = "grid";
+  listEl.style.gridTemplateColumns = "repeat(auto-fill, minmax(220px, 1fr))";
   listEl.style.gap = "12px";
   listEl.style.padding = "12px";
   listEl.style.overflowY = "auto";
@@ -277,13 +420,13 @@ function render() {
   videoList.forEach((url, idx) => {
     const card = createCard(url, idx);
     cards.push(card);
-    listEl.appendChild(card);
+    listEl.appendChild(card.wrap);
   });
 }
 
-/* =========================
-   PUBLIC API
-   ========================= */
+// =========================
+// Public API (viewer.js)
+// =========================
 
 export function initVideo(refs, callbacks = {}) {
   overlayEl = refs?.overlayEl || null;
@@ -298,6 +441,7 @@ export function initVideo(refs, callbacks = {}) {
     return;
   }
 
+  ensurePlayerDom();
   showList();
 }
 
@@ -306,23 +450,32 @@ export function activateVideo() {
 }
 
 export function setVideoList(list) {
-  videoList = Array.isArray(list) ? list : [];
+  videoList = Array.isArray(list) ? list : (list ? [list] : []);
   currentIndex = 0;
   render();
 }
 
 export function deactivateVideo() {
   active = false;
+  // leaving tab -> close player and show list
+  closePlayerToCards();
+}
 
-  document.body.classList.remove("video-playing");
+// ===== NAV API for your custom panel (buttons near tabs) =====
+export function videoExitToCards() {
+  closePlayerToCards();
+}
 
-  if (playerVideo) {
-    try {
-      playerVideo.pause();
-      playerVideo.removeAttribute("src");
-      playerVideo.load();
-    } catch {}
-  }
+export function videoPrev() {
+  if (!videoList.length) return;
+  openVideoByIndex(currentIndex - 1);
+}
 
-  showList();
+export function videoNext() {
+  if (!videoList.length) return;
+  openVideoByIndex(currentIndex + 1);
+}
+
+export function videoIsOpen() {
+  return !!isOpen;
 }
