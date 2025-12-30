@@ -263,6 +263,26 @@ playerVideo.addEventListener("click", () => {
   if (uiPinned) return;
   showVideoUI(true);
 });
+   // === Show UI on ANY interaction (PC + Mobile) ===
+
+// Любое движение мыши по видео (ПК)
+playerWrap.addEventListener("mousemove", () => {
+  if (!isPlayerOpen) return;
+  showVideoUI(true);
+});
+
+// Любой тап по экрану (мобилка)
+playerWrap.addEventListener("touchstart", () => {
+  if (!isPlayerOpen) return;
+  showVideoUI(true);
+}, { passive: true });
+
+// Pointer fallback (универсально)
+playerWrap.addEventListener("pointerdown", () => {
+  if (!isPlayerOpen) return;
+  showVideoUI(true);
+});
+
 
   overlayEl.appendChild(playerWrap);
 }
