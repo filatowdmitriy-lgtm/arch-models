@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Video Preview Generator</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body {
+  background:#0b0b0f;
+  color:#fff;
+  font-family:system-ui, sans-serif;
+  display:flex;
+  justify-content:center;
+  padding:40px;
+}
+.box {
+  width:420px;
+  background:#15151d;
+  border-radius:14px;
+  padding:20px;
+}
+input {
+  width:100%;
+  padding:10px;
+  border-radius:8px;
+  border:none;
+  margin-bottom:10px;
+}
+button {
+  padding:10px 14px;
+  border-radius:999px;
+  border:none;
+  cursor:pointer;
+  margin-right:8px;
+}
+canvas {
+  margin-top:15px;
+  width:100%;
+  background:#000;
+  border-radius:10px;
+}
+.error {
+  color:#ff6b6b;
+  margin-top:10px;
+  font-size:13px;
+}
+</style>
+</head>
+<body>
+
+<div class="box">
+  <h3>Генератор превью из видео</h3>
+
+  <input id="url" placeholder="Вставь ссылку на видео">
+
+  <button onclick="make()">Сделать превью</button>
+  <button onclick="download()">Скачать JPG</button>
+
+  <canvas id="c"></canvas>
+  <div id="err" class="error"></div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const err = document.getElementById('err');
+let lastData = null;
+
+function make() {
+  err.textContent = '';
+  lastData = null;
+
+  const url = document.getElementById('url').value.trim();
+  if (!url) return;
+
+  const v = document.createElement('video');
+  v.crossOrigin = 'anonymous'; // КЛЮЧЕВО
+  v.src = url;
+  v.muted = true;
+  v.playsInline = true;
+  v.preload = 'metadata';
+
+  v.addEventListener('loadedmetadata', () => {
+    canvas.width = v.videoWidth;
+    canvas.height = v.videoHeight;
+
+    try {
+      v.currentTime = 0.1;
+    } catch (e) {
+      err.textContent = 'Не удалось перемотать видео';
+    }
+  });
+
+  v.addEventListener('seeked', () => {
+    try {
+      ctx.drawImage(v, 0, 0);
+      lastData = canvas.toDataURL('image/jpeg', 0.9);
+    } catch (e) {
+      err.textContent =
+        '❌ CORS запрещает получить кадр. Сервер видео не разрешает доступ к пикселям.';
+    }
+  });
+
+  v.addEventListener('error', () => {
+    err.textContent = 'Ошибка загрузки видео';
+  });
+}
+
+function download() {
+  if (!lastData) return;
+  const a = document.createElement('a');
+  a.href = lastData;
+  a.download = 'preview.jpg';
+  a.click();
+}
+</script>
+
+</body>
+</html>
