@@ -454,7 +454,6 @@ body.video-playing .viewer-wrapper {
 
 .video-list {
   width: 100%;
-  height: calc(100% - var(--viewer-toolbar-height));
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   display: grid;
@@ -462,6 +461,7 @@ body.video-playing .viewer-wrapper {
   gap: 16px;
   padding: 16px;
 }
+
 @media (max-width: 640px) {
   .video-list {
     grid-template-columns: 1fr;
