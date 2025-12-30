@@ -56,6 +56,7 @@ let blobLoading = false;
 
 // Panel DOM (вместо табов)
 let navPanel = null;
+let uiLocked = false; // true, когда трогают таймлайн
 let btnBack = null;
 let btnPrev = null;
 let btnNext = null;
@@ -138,19 +139,21 @@ function hideNavPanel() {
   if (!navPanel) return;
   navPanel.style.display = "none";
 }
-function showVideoUI(autoHide = true) {
+
+function showUI() {
   showNavPanel();
-  playerVideo.controls = true;
-
-  clearTimeout(uiHideTimer);
-
-  if (autoHide && !uiPinned) {
-    uiHideTimer = setTimeout(() => {
-      hideNavPanel();
-      playerVideo.controls = false;
-    }, 3000);
-  }
+  scheduleHideUI();
 }
+
+function scheduleHideUI() {
+  if (uiHideTimer) clearTimeout(uiHideTimer);
+  if (uiLocked) return;
+
+  uiHideTimer = setTimeout(() => {
+    hideNavPanel();
+  }, 3000);
+}
+
 
 
 /* =========================
@@ -187,6 +190,16 @@ function ensurePlayerDom() {
   playerVideo.setAttribute("playsinline", "");
   playerVideo.setAttribute("webkit-playsinline", "");
   playerVideo.playsInline = true;
+   playerVideo.addEventListener("seeking", () => {
+  uiLocked = true;
+  showNavPanel(); // UI всегда виден, пока тянут
+});
+
+playerVideo.addEventListener("seeked", () => {
+  uiLocked = false;
+  scheduleHideUI(); // после отпускания — таймер
+});
+
 
   // controls включаем, но на старте спрячем пока не canplay
   playerVideo.controls = true;
@@ -219,7 +232,7 @@ playerVideo.addEventListener("play", () => {
   setLoading(false);
   if (onPlayCb) onPlayCb();
   document.body.classList.add("video-playing");
-  showVideoUI(true);
+  scheduleHideUI();
 });
 
 
@@ -247,42 +260,33 @@ playerVideo.addEventListener("pause", () => {
   playerWrap.appendChild(playerVideo);
   playerWrap.appendChild(playerLoading);
    
-// === UI interaction logic (PC + Mobile) ===
-playerVideo.addEventListener("pointerdown", () => {
-  uiPinned = true;
-  clearTimeout(uiHideTimer);
-  showVideoUI(false);
-});
 
-playerVideo.addEventListener("pointerup", () => {
-  uiPinned = false;
-  showVideoUI(true);
-});
-
-playerVideo.addEventListener("click", () => {
-  if (uiPinned) return;
-  showVideoUI(true);
-});
    // === Show UI on ANY interaction (PC + Mobile) ===
 
 // Любое движение мыши по видео (ПК)
-playerWrap.addEventListener("mousemove", () => {
-  if (!isPlayerOpen) return;
-  showVideoUI(true);
-});
 
 // Любой тап по экрану (мобилка)
-playerWrap.addEventListener("touchstart", () => {
-  if (!isPlayerOpen) return;
-  showVideoUI(true);
-}, { passive: true });
+playerWrap.addEventListener(
+  "touchstart",
+  () => {
+    if (!isPlayerOpen) return;
+    showUI();
+  },
+  { passive: true }
+);
+
 
 // Pointer fallback (универсально)
 playerWrap.addEventListener("pointerdown", () => {
   if (!isPlayerOpen) return;
-  showVideoUI(true);
+  showUI();
 });
 
+
+playerWrap.addEventListener("mousemove", () => {
+  if (!isPlayerOpen) return;
+  showUI();
+});
 
   overlayEl.appendChild(playerWrap);
 }
