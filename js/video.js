@@ -138,18 +138,14 @@ function hideNavPanel() {
   if (!navPanel) return;
   navPanel.style.display = "none";
 }
-function showVideoUI(autoHide = true) {
+function showVideoUI() {
   showNavPanel();
-  playerVideo.controls = true;
 
-  clearTimeout(uiHideTimer);
+  if (uiHideTimer) clearTimeout(uiHideTimer);
 
-  if (autoHide && !uiPinned) {
-    uiHideTimer = setTimeout(() => {
-      hideNavPanel();
-      playerVideo.controls = false;
-    }, 3000);
-  }
+  uiHideTimer = setTimeout(() => {
+    hideNavPanel();
+  }, 3000);
 }
 
 
@@ -219,7 +215,6 @@ playerVideo.addEventListener("play", () => {
   setLoading(false);
   if (onPlayCb) onPlayCb();
   document.body.classList.add("video-playing");
-  showVideoUI(true);
 });
 
 
@@ -227,8 +222,9 @@ playerVideo.addEventListener("pause", () => {
   setLoading(false);
   if (onPauseCb) onPauseCb();
   document.body.classList.remove("video-playing");
-  showVideoUI(true);
+  showNavPanel(); // на паузе всегда видно
 });
+
 
 
   playerVideo.addEventListener("waiting", () => setLoading(true));
@@ -247,22 +243,6 @@ playerVideo.addEventListener("pause", () => {
   playerWrap.appendChild(playerVideo);
   playerWrap.appendChild(playerLoading);
    
-// === UI interaction logic (PC + Mobile) ===
-playerVideo.addEventListener("pointerdown", () => {
-  uiPinned = true;
-  clearTimeout(uiHideTimer);
-  showVideoUI(false);
-});
-
-playerVideo.addEventListener("pointerup", () => {
-  uiPinned = false;
-  showVideoUI(true);
-});
-
-playerVideo.addEventListener("click", () => {
-  if (uiPinned) return;
-  showVideoUI(true);
-});
    // === Show UI on ANY interaction (PC + Mobile) ===
 
 // Любое движение мыши по видео (ПК)
