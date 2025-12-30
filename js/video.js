@@ -358,58 +358,6 @@ function ensureNavPanel() {
   });
 }
 
-/* =========================
-   Preview generation (img from first frame)
-   ========================= */
-
-
-
-    const onFail = () => {
-      cleanup();
-    };
-
-    const onReady = () => {
-      // попробуем чуть сдвинуться, чтобы получить кадр
-      const seekTo = Math.min(0.1, Math.max(0, (v.duration || 1) * 0.02));
-      const doSeek = () => {
-        try {
-          v.currentTime = seekTo;
-        } catch (e) {
-          onFail();
-        }
-      };
-
-      v.addEventListener(
-        "seeked",
-        () => {
-          try {
-            const canvas = document.createElement("canvas");
-            canvas.width = v.videoWidth || 320;
-            canvas.height = v.videoHeight || 180;
-            const ctx = canvas.getContext("2d");
-            ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
-
-            // если canvas “tainted” (CORS) — toDataURL упадёт
-            const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
-            imgEl.src = dataUrl;
-          } catch (e) {
-            // оставляем заглушку
-          } finally {
-            cleanup();
-          }
-        },
-        { once: true, passive: true }
-      );
-
-      doSeek();
-    };
-
-    v.addEventListener("loadedmetadata", onReady, { once: true, passive: true });
-    v.addEventListener("error", onFail, { once: true, passive: true });
-  } catch (e) {
-    // ignore
-  }
-}
 
 /* =========================
    Cards rendering
@@ -429,30 +377,28 @@ function createCard(url, idx) {
     background: #111;
   `;
 
-const previewVideo = document.createElement("video");
+  const previewVideo = document.createElement("video");
+  previewVideo.src = srcUrl;
+  previewVideo.preload = "metadata";
+  previewVideo.muted = true;
+  previewVideo.playsInline = true;
+  previewVideo.setAttribute("playsinline", "");
+  previewVideo.setAttribute("webkit-playsinline", "");
 
-previewVideo.src = srcUrl;
-previewVideo.preload = "metadata";
-previewVideo.muted = true;
-previewVideo.playsInline = true;
-previewVideo.setAttribute("playsinline", "");
-previewVideo.setAttribute("webkit-playsinline", "");
+  previewVideo.controls = false;
+  previewVideo.disablePictureInPicture = true;
 
-// ❗ ВАЖНО: не даём управлять видео
-previewVideo.controls = false;
-previewVideo.disablePictureInPicture = true;
+  previewVideo.style.cssText = `
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: #050506;
+    display: block;
+    pointer-events: none;
+  `;
 
-previewVideo.style.cssText = `
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 10px;
-  background: #050506;
-  display: block;
-  pointer-events: none;
-`;
+  wrap.appendChild(previewVideo);
 
-wrap.appendChild(previewVideo);
 
 
   // play icon overlay
@@ -494,8 +440,9 @@ wrap.appendChild(previewVideo);
   warmCache(srcUrl);
 
 
-  return { wrap, url, srcUrl, img };
+  return { wrap, url, srcUrl };
 }
+
 
 function render() {
   if (!listEl) return;
