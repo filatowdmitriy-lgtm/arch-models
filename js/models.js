@@ -67,8 +67,8 @@ video: [
       `${BASE}textures/ionic/scheme1.jpg`
     ],
 video: [
-  `${BASE}textures/balyasina1/v1.mp4`,
-  `${BASE}textures/balyasina1/v2.mp4`
+  "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/balyasina1/v1.mp4",
+  "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/balyasina1/v2.mp4"
 ],
     textures: {
       base: `${BASE}textures/balyasina1/BaseColor.jpg`,
