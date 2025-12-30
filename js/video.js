@@ -362,25 +362,7 @@ function ensureNavPanel() {
    Preview generation (img from first frame)
    ========================= */
 
-function tryMakePreview(imgEl, srcUrl) {
-  // Карточки без <video>. Пытаемся снять кадр в canvas.
-  // Если CORS/Telegram мешает — останется заглушка.
-  try {
-    const v = document.createElement("video");
-    v.muted = true;
-    v.preload = "metadata";
-    v.setAttribute("playsinline", "");
-    v.setAttribute("webkit-playsinline", "");
-    v.playsInline = true;
 
-    v.src = srcUrl;
-
-    const cleanup = () => {
-      try {
-        v.removeAttribute("src");
-        v.load();
-      } catch (e) {}
-    };
 
     const onFail = () => {
       cleanup();
@@ -447,24 +429,31 @@ function createCard(url, idx) {
     background: #111;
   `;
 
-  const img = document.createElement("img");
-  img.alt = `Видео ${idx + 1}`;
-  img.style.cssText = `
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-    background: #000;
-  `;
-  // заглушка (пока не сняли кадр)
-  img.src =
-    "data:image/svg+xml;charset=utf-8," +
-    encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360">
-      <rect width="100%" height="100%" fill="#111"/>
-      <text x="50%" y="50%" fill="rgba(255,255,255,0.35)" font-family="Arial" font-size="24" text-anchor="middle" dominant-baseline="middle">
-        Видео ${idx + 1}
-      </text>
-    </svg>`);
+const previewVideo = document.createElement("video");
+
+previewVideo.src = srcUrl;
+previewVideo.preload = "metadata";
+previewVideo.muted = true;
+previewVideo.playsInline = true;
+previewVideo.setAttribute("playsinline", "");
+previewVideo.setAttribute("webkit-playsinline", "");
+
+// ❗ ВАЖНО: не даём управлять видео
+previewVideo.controls = false;
+previewVideo.disablePictureInPicture = true;
+
+previewVideo.style.cssText = `
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+  background: #050506;
+  display: block;
+  pointer-events: none;
+`;
+
+wrap.appendChild(previewVideo);
+
 
   // play icon overlay
   const icon = document.createElement("div");
@@ -493,7 +482,6 @@ function createCard(url, idx) {
     </div>
   `;
 
-  wrap.appendChild(img);
   wrap.appendChild(icon);
 
   // Клик -> открыть плеер (это и есть user gesture)
@@ -505,8 +493,6 @@ function createCard(url, idx) {
   // Прогрев кеша (не блокирует ничего)
   warmCache(srcUrl);
 
-  // Пытаемся получить первый кадр
-  tryMakePreview(img, srcUrl);
 
   return { wrap, url, srcUrl, img };
 }
