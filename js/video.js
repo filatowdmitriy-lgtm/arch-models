@@ -147,12 +147,17 @@ function showUI() {
 
 function scheduleHideUI() {
   if (uiHideTimer) clearTimeout(uiHideTimer);
-  if (uiLocked) return;
+
+  // ❌ НЕ прячем UI:
+  // – если тянут таймлайн
+  // – если видео на паузе
+  if (uiLocked || playerVideo?.paused) return;
 
   uiHideTimer = setTimeout(() => {
     hideNavPanel();
   }, 3000);
 }
+
 
 
 
@@ -232,16 +237,17 @@ playerVideo.addEventListener("play", () => {
   setLoading(false);
   if (onPlayCb) onPlayCb();
   document.body.classList.add("video-playing");
-  scheduleHideUI();
 });
+
 
 
 playerVideo.addEventListener("pause", () => {
   setLoading(false);
   if (onPauseCb) onPauseCb();
   document.body.classList.remove("video-playing");
-  showVideoUI(true);
+  showNavPanel();        // ← ВАЖНО
 });
+
 
 
   playerVideo.addEventListener("waiting", () => setLoading(true));
