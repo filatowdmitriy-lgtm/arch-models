@@ -59,6 +59,10 @@ let navPanel = null;
 let btnBack = null;
 let btnPrev = null;
 let btnNext = null;
+// UI auto-hide
+let uiHideTimer = null;
+let uiPinned = false; // пользователь взаимодействует (таймлайн / drag)
+
 
 /* =========================
    Utils
@@ -134,6 +138,20 @@ function hideNavPanel() {
   if (!navPanel) return;
   navPanel.style.display = "none";
 }
+function showVideoUI(autoHide = true) {
+  showNavPanel();
+  playerVideo.controls = true;
+
+  clearTimeout(uiHideTimer);
+
+  if (autoHide && !uiPinned) {
+    uiHideTimer = setTimeout(() => {
+      hideNavPanel();
+      playerVideo.controls = false;
+    }, 3000);
+  }
+}
+
 
 /* =========================
    Ensure DOM: Player
@@ -197,25 +215,21 @@ function ensurePlayerDom() {
   playerLoading.textContent = "Загрузка…";
 
   // Events
-  playerVideo.addEventListener("play", () => {
-    // на play — панель должна быть скрыта
-    hideNavPanel();
-    setLoading(false);
+playerVideo.addEventListener("play", () => {
+  setLoading(false);
+  if (onPlayCb) onPlayCb();
+  document.body.classList.add("video-playing");
+  showVideoUI(true);
+});
 
-    // viewer.js: скрыть общий UI (он у тебя прячет toolbar/status)
-    if (onPlayCb) onPlayCb();
-    document.body.classList.add("video-playing");
-  });
 
-  playerVideo.addEventListener("pause", () => {
-    // на pause — показать видеопанель (вместо табов)
-    showNavPanel();
-    setLoading(false);
+playerVideo.addEventListener("pause", () => {
+  setLoading(false);
+  if (onPauseCb) onPauseCb();
+  document.body.classList.remove("video-playing");
+  showVideoUI(true);
+});
 
-    // viewer.js: на паузе toolbar/status НЕ показываем (у тебя так в callbacks)
-    if (onPauseCb) onPauseCb();
-    document.body.classList.remove("video-playing");
-  });
 
   playerVideo.addEventListener("waiting", () => setLoading(true));
   playerVideo.addEventListener("playing", () => setLoading(false));
@@ -232,6 +246,23 @@ function ensurePlayerDom() {
 
   playerWrap.appendChild(playerVideo);
   playerWrap.appendChild(playerLoading);
+   
+// === UI interaction logic (PC + Mobile) ===
+playerVideo.addEventListener("pointerdown", () => {
+  uiPinned = true;
+  clearTimeout(uiHideTimer);
+  showVideoUI(false);
+});
+
+playerVideo.addEventListener("pointerup", () => {
+  uiPinned = false;
+  showVideoUI(true);
+});
+
+playerVideo.addEventListener("click", () => {
+  if (uiPinned) return;
+  showVideoUI(true);
+});
 
   overlayEl.appendChild(playerWrap);
 }
@@ -543,7 +574,7 @@ function openVideoByIndex(idx) {
   playerVideo.load();
 
   setLoading(true);
-  hideNavPanel(); // на старте — панель не должна светиться
+  showVideoUI(true);
    playerVideo.controls = true;   // обязательно для iOS
 playerVideo.muted = true;      // autoplay policy
 
