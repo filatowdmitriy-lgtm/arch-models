@@ -47,11 +47,12 @@ export function initViewer(refs) {
       tabVideoBtn: dom.tabVideoBtn
     },
     {
-      onPlay: () => {
-        // во время play — прячем UI (как ты хотел)
-        setUiHidden(true);
-        document.body.classList.add("video-playing");
-      },
+onPlay: () => {
+  // НЕ прячем тулбар, иначе navPanel не появится никогда
+  setUiHidden(false);
+  document.body.classList.add("video-playing");
+},
+
 onPause: () => {
   setUiHidden(false);
   document.body.classList.remove("video-playing");
