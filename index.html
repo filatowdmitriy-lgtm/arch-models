@@ -452,15 +452,29 @@ body.video-playing .viewer-wrapper {
 }
 
 
+#videoOverlay {
+  position: absolute;
+  inset: 0;
+  padding-top: var(--viewer-toolbar-height);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .video-list {
+  flex: 1;                    /* 🔥 занимает ВСЁ оставшееся место */
   width: 100%;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
   padding: 16px;
+
+  align-content: flex-start;  /* 🔥 чтобы карточки не растягивались */
 }
+
 
 @media (max-width: 640px) {
   .video-list {
