@@ -368,36 +368,24 @@ function createCard(url, idx) {
 
   const wrap = document.createElement("div");
   wrap.className = "video-card";
-  wrap.style.cssText = `
-    position: relative;
-    width: 100%;
-    aspect-ratio: 16 / 9;
-    border-radius: 12px;
-    overflow: hidden;
-    background: #111;
-  `;
 
-  const previewVideo = document.createElement("video");
-  previewVideo.src = srcUrl;
-  previewVideo.preload = "metadata";
-  previewVideo.muted = true;
-  previewVideo.playsInline = true;
-  previewVideo.setAttribute("playsinline", "");
-  previewVideo.setAttribute("webkit-playsinline", "");
+// === JPG превью (лежит рядом с mp4) ===
+const previewImg = document.createElement("img");
 
-  previewVideo.controls = false;
-  previewVideo.disablePictureInPicture = true;
+// меняем .mp4 -> .jpg
+previewImg.src = srcUrl.replace(/\.mp4(\?.*)?$/i, ".jpg$1");
 
-  previewVideo.style.cssText = `
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    background: #050506;
-    display: block;
-    pointer-events: none;
-  `;
+previewImg.alt = `Видео ${idx + 1}`;
 
-  wrap.appendChild(previewVideo);
+previewImg.style.cssText = `
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #050506;
+  display: block;
+`;
+
+wrap.appendChild(previewImg);
 
 
 
