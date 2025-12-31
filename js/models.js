@@ -17,13 +17,9 @@ export const MODELS = [
     url: `${BASE}models/doric.gltf`,
     preview: `${BASE}textures/doric/preview.png`,
     thumbLetter: "D",
-    schemes: [
-      `${BASE}textures/doric/scheme1.jpg`,
-      `${BASE}textures/doric/scheme2.jpg`
-    ],
+
 video: [
-  `${BASE}textures/doric/test_video.mp4`,
-  `${BASE}textures/doric/test_video2.mp4`
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/doric/v1.mp4`
 ],
     textures: {
       base: `${BASE}textures/doric/BaseColor.jpg`,
@@ -41,11 +37,8 @@ video: [
     url: `${BASE}models/ionic.gltf`,
     preview: `${BASE}textures/ionic/preview.png`,
     thumbLetter: "I",
-    schemes: [
-      `${BASE}textures/ionic/scheme1.jpg`
-    ],
 video: [
-  `${BASE}textures/doric/test_video.mp4`
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/ionic/v1.mp4`
 ],
     textures: {
       base: `${BASE}textures/ionic/BaseColor.jpg`,
@@ -64,7 +57,8 @@ video: [
     preview: `${BASE}textures/balyasina1/preview.png`,
     thumbLetter: "I",
     schemes: [
-      `${BASE}textures/ionic/scheme1.jpg`
+      `${BASE}textures/balyasina1/s1.jpg`,
+      `${BASE}textures/balyasina1/s2.jpg`
     ],
 video: [
   "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/balyasina1/v1.mp4",
@@ -87,10 +81,13 @@ video: [
     preview: `${BASE}textures/balyasina2/preview.png`,
     thumbLetter: "I",
     schemes: [
-      `${BASE}textures/ionic/scheme1.jpg`
+      `${BASE}textures/balyasina2/s1.jpg`,
+       `${BASE}textures/balyasina2/s2.jpg`,
+       `${BASE}textures/balyasina2/s3.jpg`
     ],
 video: [
-  `${BASE}textures/doric/test_video.mp4`
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/balyasina2/v1.mp4`,
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/balyasina2/v2.mp4`
 ],
     textures: {
       base: `${BASE}textures/balyasina2/BaseColor.jpg`,
@@ -109,10 +106,12 @@ video: [
     preview: `${BASE}textures/kapitel2/preview.png`,
     thumbLetter: "I",
     schemes: [
-      `${BASE}textures/ionic/scheme1.jpg`
+      `${BASE}textures/kapitel2/s1.jpg`,
+      `${BASE}textures/kapitel2/s2.jpg`
     ],
 video: [
-  `${BASE}textures/doric/test_video.mp4`
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/kapitel2/v1.mp4`,
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/kapitel2/v2.mp4`
 ],
     textures: {
       base: `${BASE}textures/kapitel2/BaseColor.jpg`,
@@ -131,10 +130,12 @@ video: [
     preview: `${BASE}textures/kapitel1/preview.png`,
     thumbLetter: "I",
     schemes: [
-      `${BASE}textures/ionic/scheme1.jpg`
+      `${BASE}textures/kapitel1/s1.jpg`,
+      `${BASE}textures/kapitel1/s2.jpg`
     ],
 video: [
-  `${BASE}textures/doric/test_video.mp4`
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/kapitel1/v1.mp4`,
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/kapitel1/v2.mp4`
 ],
     textures: {
       base: `${BASE}textures/kapitel1/BaseColor.jpg`,
@@ -153,11 +154,12 @@ video: [
     preview: `${BASE}textures/vase1/preview.png`,
     thumbLetter: "I",
     schemes: [
-      `${BASE}textures/vase1/1.jpg`,
-      `${BASE}textures/vase1/2.jpg`
+      `${BASE}textures/vase1/s1.jpg`,
+      `${BASE}textures/vase1/s2.jpg`
     ],
 video: [
-  `${BASE}textures/doric/test_video.mp4`
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/vase1/v1.mp4`,
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/vase1/v2.mp4`
 ],
     textures: {
       base: `${BASE}textures/vase1/BaseColor.jpg`,
@@ -176,10 +178,13 @@ video: [
     preview: `${BASE}textures/vase2/preview.png`,
     thumbLetter: "I",
     schemes: [
-      `${BASE}textures/ionic/scheme1.jpg`
+      `${BASE}textures/vase2/s1.jpg`,
+      `${BASE}textures/vase2/s2.jpg`,
+      `${BASE}textures/vase2/s3.jpg`
     ],
 video: [
-  `${BASE}textures/doric/test_video.mp4`
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/vase2/v1.mp4`,
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/vase2/v2.mp4`
 ],
     textures: {
       base: `${BASE}textures/vase2/BaseColor.jpg`,
@@ -197,11 +202,8 @@ video: [
     url: `${BASE}models/chair1.gltf`,
     preview: `${BASE}textures/chair1/preview.png`,
     thumbLetter: "I",
-    schemes: [
-      `${BASE}textures/ionic/scheme1.jpg`
-    ],
 video: [
-  `${BASE}textures/doric/test_video.mp4`
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/chair1/v1.mp4`
 ],
     textures: {
       base: `${BASE}textures/chair1/BaseColor.jpg`,
@@ -219,11 +221,8 @@ video: [
     url: `${BASE}models/chair2.gltf`,
     preview: `${BASE}textures/chair2/preview.png`,
     thumbLetter: "I",
-    schemes: [
-      `${BASE}textures/ionic/scheme1.jpg`
-    ],
 video: [
-  `${BASE}textures/doric/test_video.mp4`
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/chair1/v1.mp4`
 ],
     textures: {
       base: `${BASE}textures/chair2/BaseColor.jpg`,
@@ -240,11 +239,10 @@ video: [
   desc: "СПбГАСУ",
   url: `${BASE}models/molbert.gltf`,
   preview: `${BASE}textures/molbert/preview.png`,
-    schemes: [
-      `${BASE}textures/ionic/scheme1.jpg`
-    ],
 video: [
-  `${BASE}textures/doric/test_video.mp4`
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/molbert/v1.mp4`,
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/molbert/v2.mp4`,
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/molbert/v3.mp4`
 ],
 
 materials: {
