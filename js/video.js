@@ -368,13 +368,6 @@ function createCard(url, idx) {
 
   const wrap = document.createElement("div");
   wrap.className = "video-card";
-wrap.style.cssText = `
-  position: relative;
-  width: 100%;
-  border-radius: 12px;
-  overflow: hidden;
-  background: #111;
-`;
 
 // === JPG превью (лежит рядом с mp4) ===
 const previewImg = document.createElement("img");
