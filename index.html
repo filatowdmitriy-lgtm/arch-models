@@ -463,14 +463,15 @@ body.video-playing .viewer-wrapper {
 
 .video-list {
   flex: 1;
+  width: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-
-  grid-auto-rows: auto;        /* 🔥 КЛЮЧ */
-  align-items: start;          /* 🔥 КЛЮЧ */
-
-  gap: 16px;
-  padding: 16px;
+  gap: 16px;          /* ✅ фиксированный одинаковый отступ */
+  padding: 16px;      /* ✅ фиксированные поля */
+  align-content: flex-start;
 }
 
 
@@ -480,9 +481,10 @@ body.video-playing .viewer-wrapper {
 @media (max-width: 640px) {
   .video-list {
     grid-template-columns: 1fr;
-    gap: 14px;
+    /* gap НЕ трогаем — чтобы был одинаковый */
   }
 }
+
 
 .video-card {
   width: 100%;
@@ -492,13 +494,24 @@ body.video-playing .viewer-wrapper {
 
 
 
-.video-card video { /* ADDED */
+/* Карточка сама держит высоту 16:9 — одинаково в TG / Safari / Desktop */
+.video-card {
   width: 100%;
   aspect-ratio: 16 / 9;
-  border-radius: 10px;
-  background: #050506;
-  display: block;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #111;
 }
+
+/* Превью (jpg) занимает всю карточку */
+.video-card img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  background: #050506;
+}
+
 
 /* аккуратная заглушка */
 .video-empty { /* ADDED */
