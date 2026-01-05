@@ -17,6 +17,11 @@ export const MODELS = [
     url: `${BASE}models/doric.gltf`,
     preview: `${BASE}textures/doric/preview.png`,
     thumbLetter: "D",
+    schemes: [
+      `${BASE}textures/doric/s1.jpg`,
+      `${BASE}textures/doric/s2.jpg`,
+      `${BASE}textures/doric/s3.jpg`
+    ],
 
 video: [
   `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/doric/v1.mp4`
@@ -37,6 +42,11 @@ video: [
     url: `${BASE}models/ionic.gltf`,
     preview: `${BASE}textures/ionic/preview.png`,
     thumbLetter: "I",
+    schemes: [
+      `${BASE}textures/ionic/s1.jpg`,
+      `${BASE}textures/ionic/s2.jpg`,
+      `${BASE}textures/ionic/s3.jpg`
+    ],
 video: [
   `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/ionic/v1.mp4`
 ],
