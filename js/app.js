@@ -13,7 +13,7 @@ import { initViewer } from "./viewer.js";
    ============================================================ */
 
 // ⚠️ УСТАНОВИ сюда chat_instance ТВОЕЙ закрытой группы:
-const ALLOWED_CHAT_INSTANCE = "-3659198091171037064";
+const ALLOWED_CHAT_INSTANCE = "3659198091171037064";
 
 // Показывает красивый экран "Доступ ограничен"
 function showLockScreen(message) {
