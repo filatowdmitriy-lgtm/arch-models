@@ -13,7 +13,11 @@ import { initViewer } from "./viewer.js";
    ============================================================ */
 
 // ⚠️ УСТАНОВИ сюда chat_instance ТВОЕЙ закрытой группы:
-const ALLOWED_CHAT_INSTANCE = "3659198091171037064";
+const ALLOWED_CHAT_INSTANCES = [
+  "-561659029981423148", // группа 1
+  "3659198091171037064", // группа 2
+  "1533210958432912681"  // группа 3
+];
 
 // Показывает красивый экран "Доступ ограничен"
 function showLockScreen(message) {
@@ -49,10 +53,10 @@ function checkAccess() {
   const ci = tg.initDataUnsafe.chat_instance;
 
   // Запуск в Telegram, но не из нашей группы
-  if (!ci || ci !== ALLOWED_CHAT_INSTANCE) {
-    showLockScreen("Мини-приложение доступно только участникам закрытого чата.");
-    return false;
-  }
+  if (!ci || !ALLOWED_CHAT_INSTANCES.includes(ci)) {
+  showLockScreen("Мини-приложение доступно только участникам закрытых чатов.");
+  return false;
+}
 
   // Всё хорошо
   return true;
