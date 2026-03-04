@@ -45,7 +45,8 @@ video: [
     schemes: [
       `${BASE}textures/ionic/s1.jpg`,
       `${BASE}textures/ionic/s2.jpg`,
-      `${BASE}textures/ionic/s3.jpg`
+      `${BASE}textures/ionic/s3.jpg`,
+      `${BASE}textures/ionic/s4.jpg`
     ],
 video: [
   `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/ionic/v1.mp4`
