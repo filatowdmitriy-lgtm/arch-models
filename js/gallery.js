@@ -1,90 +1,94 @@
 // js/gallery.js
 //
 // Модуль отвечает за:
-// - рендеринг галереи моделей из MODELS,
+// - рендеринг галереи (любой список карточек),
 // - создание карточек,
 // - обработку кликов,
-// - вызов колбэка onSelect(modelId).
+// - вызов колбэка onSelect(id).
 //
 // НЕ содержит three.js, viewer, UI вкладок и т.п.
-// НЕ знает о 3D, схемах, видео.
-// Лишь выводит список моделей и даёт сигнал о выборе.
-//
 
 import { MODELS } from "./models.js";
 
 /**
- * Инициализация галереи.
+ * Универсальный рендер галереи для любого списка карточек.
  *
  * @param {HTMLElement} containerEl — DOM-элемент галереи (#gallery)
+ * @param {Array} items — массив элементов (models/sections)
  * @param {object} options
  * @param {function(string):void} options.onSelect — вызывается при клике по карточке
  */
-export function initGallery(containerEl, { onSelect }) {
+export function renderGallery(containerEl, items, { onSelect }) {
   if (!containerEl) {
-    console.error("initGallery: containerEl is null");
+    console.error("renderGallery: containerEl is null");
     return;
   }
 
   if (typeof onSelect !== "function") {
-    console.error("initGallery: onSelect must be a function");
+    console.error("renderGallery: onSelect must be a function");
     return;
   }
 
-  // Очистка контейнера
   containerEl.innerHTML = "";
 
-  // Рендер карточек
-  MODELS.forEach((m) => {
+  items.forEach((m) => {
     const card = document.createElement("div");
     card.className = "model-card";
     card.dataset.model = m.id;
 
-// === Превью (PNG или fallback-буква) ===
-const thumb = document.createElement("div");
-thumb.className = "model-thumb";
+    const thumb = document.createElement("div");
+    thumb.className = "model-thumb";
 
 if (m.preview) {
   const img = document.createElement("img");
-  img.src = m.preview;
-  img.alt = m.name;
 
-  // производительность
+  // Если preview уже абсолютный URL — используем как есть.
+  // Если это относительный путь вроде "textures/1/preview.png",
+  // прогоняем через тот же защищённый API-формат.
+  const isAbsolute =
+    /^https?:\/\//i.test(m.preview) ||
+    m.preview.startsWith("/") ||
+    m.preview.startsWith("data:");
+
+  img.src = isAbsolute
+    ? m.preview
+    : `https://api.apparchi.ru/?path=${encodeURIComponent(m.preview)}`;
+
+  img.alt = m.name || "";
   img.loading = "lazy";
   img.decoding = "async";
-
   thumb.appendChild(img);
 } else {
-  // fallback — как было
-  thumb.textContent = m.thumbLetter || m.name.charAt(0);
-}
+      thumb.textContent = m.thumbLetter || (m.name ? m.name.charAt(0) : "?");
+    }
 
-    // === Заголовок ===
     const caption = document.createElement("div");
     caption.className = "model-caption";
-    caption.textContent = m.name;
+    caption.textContent = m.name || "";
 
-    // === Описание ===
     const desc = document.createElement("div");
     desc.className = "model-desc";
-    desc.textContent = m.desc;
+    desc.textContent = m.desc || "";
 
-    // === Добавляем в DOM ===
     card.appendChild(thumb);
     card.appendChild(caption);
     card.appendChild(desc);
 
-    // === Обработчик клика ===
-    card.addEventListener("click", () => {
-      onSelect(m.id);
-    });
-
+    card.addEventListener("click", () => onSelect(m.id));
     containerEl.appendChild(card);
   });
 }
 
 /**
- * Показать галерею (как в 8.html → remove "hidden")
+ * Совместимость со старым поведением:
+ * initGallery рендерит MODELS (как раньше).
+ */
+export function initGallery(containerEl, { onSelect }) {
+  renderGallery(containerEl, MODELS, { onSelect });
+}
+
+/**
+ * Показать галерею
  */
 export function showGallery(containerEl, viewerWrapperEl) {
   if (containerEl) containerEl.classList.remove("hidden");
@@ -92,7 +96,7 @@ export function showGallery(containerEl, viewerWrapperEl) {
 }
 
 /**
- * Скрыть галерею (добавление "hidden")
+ * Скрыть галерею
  */
 export function hideGallery(containerEl) {
   if (containerEl) containerEl.classList.add("hidden");

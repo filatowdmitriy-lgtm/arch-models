@@ -4,9 +4,43 @@
 // Добавлена проверка доступа по chat_instance.
 //
 // Если пользователь НЕ в нужной группе — показываем lockScreen и НЕ запускаем приложение.
-
-import { initGallery } from "./gallery.js";
+import { initInsetsViewer } from "./insetsViewer.js";
+import { INSETS } from "./insetsModels.js";
+import { renderGallery } from "./gallery.js";
 import { initViewer } from "./viewer.js";
+import { MODELS } from "./models.js";
+
+// ✅ Главное меню (как галерея, но карточки-разделы)
+const MAIN_MENU = [
+  {
+    id: "section_arch",
+    name: "Архитектурные детали",
+    desc: "3D + Построение + Видео",
+    preview: "textures/doric/preview.png",
+    thumbLetter: "А"
+  },
+  {
+    id: "section_insets",
+    name: "Врезки",
+    desc: "3D врезок (пока тест)",
+    preview: "textures/3/preview.png",
+    thumbLetter: "В"
+  }
+];
+
+// ✅ Временный список “врезок” — для теста дублируем мольберт
+// ВАЖНО: id оставляем "molbert", чтобы viewer.js смог открыть его как обычную модель.
+const TEMP_INSETS = [
+  {
+    id: "molbert", // тот же id, что в MODELS
+    name: "Мольберт (врезка — тест)",
+    desc: "Временно задублировано из Архитектурных деталей",
+    // берём preview из обычных моделей (найдём ниже при рендере)
+    // preview: можно не ставить, будет буква
+    thumbLetter: "М"
+  }
+];
+
 
 /* ============================================================
    0. ДОСТУП ТОЛЬКО ИЗ КОНКРЕТНОЙ ГРУППЫ
@@ -16,7 +50,8 @@ import { initViewer } from "./viewer.js";
 const ALLOWED_CHAT_INSTANCES = [
   "-561659029981423148", // группа 1
   "3659198091171037064", // группа 2
-  "1533210958432912681"  // группа 3
+  "1533210958432912681",  // группа 3
+  "-8865587346109190339"  // группа 4
 ];
 
 // Показывает красивый экран "Доступ ограничен"
@@ -177,6 +212,17 @@ const videoEmptyEl = document.getElementById("videoEmpty"); // ADDED
   const progressBarEl = document.getElementById("progressBar");
 
   const statusEl = document.getElementById("status");
+  // ✅ Ползунок прозрачности для режима "Врезки"
+const insetOpacityRow = document.getElementById("insetOpacityRow");
+const insetOpacitySlider = document.getElementById("insetOpacitySlider");
+
+  const breadcrumbBar = document.getElementById("breadcrumbBar");
+const breadcrumbBackBtn = document.getElementById("breadcrumbBackBtn");
+const breadcrumbSectionLabel = document.getElementById("breadcrumbSectionLabel");
+  const brandBlock = document.getElementById("brandBlock");
+  const headerCenterTitle = document.getElementById("headerCenterTitle");
+
+
 
   window.debugLog = { textContent: "" };
 
@@ -224,11 +270,113 @@ videoEmptyEl,     // ADDED
     progressBarEl,
     statusEl
   });
+  const insetViewer = initInsetsViewer({
+  galleryEl,
+  viewerWrapperEl,
+  modelLabelEl,
+  prevBtn,
+  nextBtn,
+  backBtn,
+  tab3dBtn,
+  tabSchemeBtn,
+  tabVideoBtn,
+  canvasEl,
+  loadingEl,
+  loadingTextEl,
+  progressBarEl,
+  statusEl,
+  insetOpacityRow,
+  insetOpacitySlider
+});
+
 
   // 🔥 4. Инициализация галереи
-  initGallery(galleryEl, {
-    onSelect: viewer.openModelById
+// =======================
+// ✅ Навигация по экранам
+// =======================
+let currentScreen = "main"; // "main" | "arch" | "insets"
+  
+function setBreadcrumbVisible(visible) {
+  if (!breadcrumbBar) return;
+  breadcrumbBar.style.display = visible ? "flex" : "none";
+}
+
+function setBreadcrumbSection(title) {
+  if (!headerCenterTitle) return;
+  headerCenterTitle.textContent = title || "";
+}
+
+
+  function setBrandVisible(visible) {
+  if (!brandBlock) return;
+  brandBlock.style.display = visible ? "block" : "none";
+}
+
+
+// маленький хелпер: показать список карточек в #gallery
+function showMainMenu() {
+  currentScreen = "main";
+    setBreadcrumbVisible(false);
+  setBreadcrumbSection("");
+    setBrandVisible(true);
+  renderGallery(galleryEl, MAIN_MENU, {
+    onSelect: (id) => {
+      if (id === "section_arch") showArchGallery();
+      if (id === "section_insets") showInsetsGallery();
+
+    }
   });
+
+  // гарантируем, что мы на экране галереи
+  viewer.showGallery();
+}
+
+// экран “архитектурных деталей” = обычный список MODELS
+function showArchGallery() {
+  currentScreen = "arch";
+  renderGallery(galleryEl, MODELS, { onSelect: viewer.openModelById });
+  viewer.showGallery();
+  setBrandVisible(false);
+  setBreadcrumbVisible(true);
+  setBreadcrumbSection("Архитектурные детали");
+}
+
+// экран “врезок” = временно только мольберт
+function showInsetsGallery() {
+  currentScreen = "insets";
+
+  // ✅ В разделе breadcrumb виден
+  setBrandVisible(false);     // ✅ бренд скрываем в разделе
+  setBreadcrumbVisible(true); // ✅ показываем “← Врезки”
+  setBreadcrumbSection("Врезки");
+
+  // Чтобы у карточки мольберта было настоящее preview — подцепим его из MODELS, если найдём
+  const molbertMeta = MODELS.find((m) => m.id === "molbert");
+  if (molbertMeta && molbertMeta.preview) {
+    TEMP_INSETS[0].preview = molbertMeta.preview;
+  }
+
+  renderGallery(galleryEl, INSETS, { onSelect: insetViewer.openById });
+
+  // ✅ показываем экран галереи (врезки)
+  insetViewer.showGallery();
+}
+
+// старт — показываем главное меню
+showMainMenu();
+breadcrumbBackBtn?.addEventListener("click", () => {
+  showMainMenu();
+});
+
+
+
+// ✅ (опционально) сделать кликабельным заголовок, чтобы всегда возвращаться в главное меню
+const headerTitle = document.querySelector(".app-title");
+headerTitle?.addEventListener("click", () => {
+  // если ты в viewer — просто вернёмся в меню
+  showMainMenu();
+});
+
 
   console.log("App initialized: access granted.");
 }

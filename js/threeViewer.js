@@ -2,12 +2,46 @@
 // Камера и управление — 100% поведение 8.html.
 
 import * as THREE from "three";
+import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
+import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 
 let scene = null;
 let camera = null;
 let renderer = null;
 
 let currentModel = null;
+// ===== CAD overlay (точки/линии для врезок) =====
+let cadGroup = null;
+let cadScene = null;
+let cadAlpha = 1;
+let cadLineMat = null; // LineMaterial для толстых CAD-линий
+// ===== Outline / Edges overlay (контуры для врезок) =====
+let outlineEnabled = false;
+let outlineGroup = null;       // общий контейнер линий/силуэта
+let outlineMat = null;         // материал для рёбер
+let hullMat = null;            // материал для силуэта (оболочка)
+let hullMeshes = [];           // список оболочек (по каждому mesh)
+let edgesMeshes = [];          // список edge-линий
+let outlineThicknessPx = 1.5;  // как CAD-линии (примерно)
+let edgesAngleDeg = 60;        // порог угла для рёбер (автомат)
+// ===== Inset blend (70..100) =====
+let insetBlendEnabled = false;
+let insetBlendFactor = 0;           // 0..1 (0 = только passA, 1 = только passB)
+let insetControlledMaterials = [];  // материалы, которые делаем opaque во втором проходе
+// ===== Section blend (сечения: статичный mix) =====
+let insetSectionBlendFactor = 0.5;   // 0..1 (фиксированный микс для сечений)
+let insetSectionMaterials = [];      // материалы сечений, которые делаем opaque в одном из проходов
+
+let rtA = null;
+let rtB = null;
+let rtC = null;
+let rtD = null;
+let rtN = null; // normals + depth (для контуров)
+let rtSamples = 4; // 4 / 2 / 0 — только для RenderTarget'ов inset-blend
+let postScene = null;
+let postCam = null;
+let postQuad = null;
 
 const state = {
   radius: 4.5,
@@ -21,8 +55,30 @@ const state = {
 };
 
 export function initThree(canvas) {
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x050506);
+scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050506);
+  // Контуры: рисуются в ОСНОВНОЙ сцене (чтобы попадали в inset-blend композит)
+outlineGroup = new THREE.Group();
+outlineGroup.name = "outline-overlay";
+scene.add(outlineGroup);
+  outlineGroup.visible = false; // ✅ больше не рисуем EdgesGeometry в сцене
+
+// Линии рёбер (белые)
+outlineMat = new THREE.LineBasicMaterial({
+  color: 0xffffff,
+  transparent: true,
+  opacity: 1.0,
+  depthTest: true,   // важно: скрытые рёбра не рисуем
+  depthWrite: false
+});
+
+
+
+// CAD overlay: отдельная сцена, рисуется вторым проходом поверх всего
+cadScene = new THREE.Scene();
+cadGroup = new THREE.Group();
+cadGroup.name = "cad-overlay";
+cadScene.add(cadGroup);
 
   camera = new THREE.PerspectiveCamera(
     40,
@@ -41,18 +97,51 @@ export function initThree(canvas) {
 
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  // CAD thick lines material (pixels)
+cadLineMat = new LineMaterial({
+  color: 0xdf1a84,
+  linewidth: 1.5,      
+  transparent: true,
+  opacity: cadAlpha,
+  depthTest: false,
+  depthWrite: false
+});
+
+// resolution обязателен для LineMaterial
+cadLineMat.resolution.set(
+  renderer.domElement.width,
+  renderer.domElement.height
+);
   renderer.shadowMap.enabled = true;
 
   setupLights();
   initControls(canvas);
 
-  renderer.setAnimationLoop(() => {
-    state.rotX += (state.targetRotX - state.rotX) * 0.22;
-    state.rotY += (state.targetRotY - state.rotY) * 0.22;
+renderer.setAnimationLoop(() => {
+  state.rotX += (state.targetRotX - state.rotX) * 0.22;
+  state.rotY += (state.targetRotY - state.rotY) * 0.22;
 
-    updateCameraPosition();
+  updateCameraPosition();
+    // обновляем толщину силуэта под текущий zoom (примерно px)
+
+
+  if (insetBlendEnabled) {
+    renderWithInsetBlend();  // ✅ всегда через композит, даже при 0 и 1
+  } else {
     renderer.render(scene, camera);
-  });
+  }
+
+// ✅ CAD поверх финального кадра (НЕ очищаем экран повторно)
+if (document.body.classList.contains("inset-mode") && cadScene && cadGroup && cadGroup.children.length) {
+  const prevAutoClear = renderer.autoClear;
+  renderer.autoClear = false;
+
+  renderer.clearDepth();           // сбрасываем depth, чтобы CAD был поверх
+  renderer.render(cadScene, camera);
+
+  renderer.autoClear = prevAutoClear;
+}
+});
 }
 
 export function setModel(root) {
@@ -67,6 +156,37 @@ export function setModel(root) {
   state.targetRotY = 0.00;
 
   fitCameraToModel(root);
+}
+
+function rebuildOutlinesForModel(root) {
+  clearOutlines();
+  if (!outlineGroup || !root) return;
+
+  // Пропускаем “служебные” объекты (точки a,b,c,d и т.п.)
+  const pointNameRe = /^[a-z](\d+)?$/;
+
+  root.traverse((obj) => {
+    if (!obj.isMesh) return;
+    const nm = String(obj.name || "").trim();
+
+    // пропускаем точки/хелперы
+    if (pointNameRe.test(nm)) return;
+
+    const geom = obj.geometry;
+    if (!geom) return;
+
+
+    // 2) Рёбра: EdgesGeometry по углу
+    const edgesGeom = new THREE.EdgesGeometry(geom, edgesAngleDeg);
+    const edges = new THREE.LineSegments(edgesGeom, outlineMat);
+    edges.matrixAutoUpdate = false;
+    edges.renderOrder = 1501;         // чуть выше оболочки
+    edges.onBeforeRender = () => {
+      edges.matrixWorld.copy(obj.matrixWorld);
+    };
+    outlineGroup.add(edges);
+    edgesMeshes.push(edges);
+  });
 }
 
 function fitCameraToModel(root) {
@@ -101,8 +221,484 @@ export function resize() {
   camera.updateProjectionMatrix();
 
   renderer.setSize(window.innerWidth, window.innerHeight);
+  if (cadLineMat) {
+  cadLineMat.resolution.set(
+    renderer.domElement.width,
+    renderer.domElement.height
+  );
+}
+    // чтобы RenderTarget пересоздались под новый размер
+  if (insetBlendEnabled) {
+    ensureBlendResources();
+  }
 }
 
+// Включаем/выключаем режим смешивания (используется ТОЛЬКО во врезках)
+export function setInsetBlendEnabled(enabled) {
+  insetBlendEnabled = !!enabled;
+}
+
+export function setInsetRtSamples(samples) {
+  const s = Number(samples);
+  rtSamples = (s === 0 || s === 2 || s === 4) ? s : 4;
+
+  // чтобы изменения применились сразу — пересоздать RT под текущий размер
+  if (insetBlendEnabled) ensureBlendResources();
+}
+// Обновляем фактор смешивания и список материалов, которые должны стать opaque во 2-м проходе
+export function setInsetBlendState(factor01, controlledMats) {
+  insetBlendFactor = THREE.MathUtils.clamp(Number(factor01) || 0, 0, 1);
+  insetControlledMaterials = Array.isArray(controlledMats) ? controlledMats : [];
+}
+
+// Обновляем статичный микс сечений и список материалов-сечений
+export function setInsetSectionBlendState(factor01, sectionMats) {
+  insetSectionBlendFactor = THREE.MathUtils.clamp(Number(factor01) || 0, 0, 1);
+  insetSectionMaterials = Array.isArray(sectionMats) ? sectionMats : [];
+}
+
+// ===============================
+// CAD overlay API (для врезок)
+// ===============================
+
+export function setOutlineEnabled(enabled) {
+  outlineEnabled = !!enabled; // влияет только на post-обводку (uOutlineOn)
+}
+
+export function setOutlineStyle({ thicknessPx, edgesAngle } = {}) {
+  if (typeof thicknessPx === "number") outlineThicknessPx = thicknessPx;
+  if (typeof edgesAngle === "number") edgesAngleDeg = edgesAngle;
+}
+
+function clearOutlines() {
+  if (!outlineGroup) return;
+
+  for (const e of edgesMeshes) {
+    e.geometry?.dispose?.();
+  }
+
+  edgesMeshes = [];
+  outlineGroup.clear();
+}
+
+export function clearCadOverlay() {
+  if (!cadGroup) return;
+
+  for (const child of cadGroup.children) {
+    child.geometry?.dispose?.();
+    child.material?.dispose?.();
+  }
+
+  cadGroup.clear();
+}
+
+export function setCadAlpha(alpha) {
+  cadAlpha = Math.max(0, Math.min(1, alpha));
+if (cadLineMat) cadLineMat.opacity = cadAlpha;
+  if (!cadGroup) return;
+
+  cadGroup.traverse((obj) => {
+    if (!obj.material) return;
+
+    obj.material.transparent = true;
+    obj.material.opacity = cadAlpha;
+    obj.material.needsUpdate = true;
+  });
+}
+
+export function setCadOverlay(spec) {
+  clearCadOverlay();
+  if (!cadGroup) return;
+  if (!spec || !Array.isArray(spec.points) || spec.points.length === 0) return;
+
+  // карта точек id -> Vector3
+  const pointMap = new Map();
+  for (const p of spec.points) {
+    pointMap.set(String(p.id), new THREE.Vector3(p.x, p.y, p.z));
+  }
+
+  // ---- точки ----
+  const pos = new Float32Array(spec.points.length * 3);
+  spec.points.forEach((p, i) => {
+    pos[i * 3 + 0] = p.x;
+    pos[i * 3 + 1] = p.y;
+    pos[i * 3 + 2] = p.z;
+  });
+
+  const pointsGeo = new THREE.BufferGeometry();
+  pointsGeo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+
+const pointsMat = new THREE.PointsMaterial({
+  color: 0xdf1a84,
+  size: 8,
+  sizeAttenuation: false,
+  depthTest: false,
+  depthWrite: false,
+  transparent: true,
+  opacity: cadAlpha
+});
+  const pointsObj = new THREE.Points(pointsGeo, pointsMat);
+  pointsObj.renderOrder = 2000;
+  cadGroup.add(pointsObj);
+
+  // ---- линии ----
+  if (Array.isArray(spec.lines) && spec.lines.length) {
+    const linePos = [];
+
+    for (const seg of spec.lines) {
+      const a = pointMap.get(String(seg[0]));
+      const b = pointMap.get(String(seg[1]));
+      if (!a || !b) continue;
+
+      linePos.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    }
+
+    if (linePos.length) {
+      const lineGeo = new THREE.BufferGeometry();
+      lineGeo.setAttribute(
+        "position",
+        new THREE.BufferAttribute(new Float32Array(linePos), 3)
+      );
+
+// Thick CAD lines via LineSegments2 (stable linewidth on mobile)
+const segGeom = new LineSegmentsGeometry();
+segGeom.setPositions(new Float32Array(linePos)); // linePos уже собран выше
+
+// на всякий случай, если initThree ещё не успел создать материал
+const mat = cadLineMat || new LineMaterial({
+  color: 0xdf1a84,
+  linewidth: 1.5,
+  transparent: true,
+  opacity: cadAlpha,
+  depthTest: false,
+  depthWrite: false
+});
+
+// если создали mat здесь (fallback) — нужен resolution
+if (!cadLineMat && renderer) {
+  mat.resolution.set(renderer.domElement.width, renderer.domElement.height);
+}
+
+const linesObj = new LineSegments2(segGeom, mat);
+linesObj.renderOrder = 1999;
+cadGroup.add(linesObj);
+    }
+  }
+}
+
+function ensureBlendResources() {
+  if (!renderer) return;
+
+const size = new THREE.Vector2();
+renderer.getDrawingBufferSize(size);  // ✅ ВАЖНО: именно drawing buffer, а не CSS size
+const w = Math.max(1, Math.floor(size.x));
+const h = Math.max(1, Math.floor(size.y));
+
+  // RT параметры (чтобы не было странного пересвета)
+  const params = {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    depthBuffer: true,
+    stencilBuffer: false,
+  };
+
+  if (!rtA || rtA.width !== w || rtA.height !== h) {
+    rtA?.dispose?.();
+    rtA = new THREE.WebGLRenderTarget(w, h, params);
+  }
+
+  if (!rtB || rtB.width !== w || rtB.height !== h) {
+    rtB?.dispose?.();
+    rtB = new THREE.WebGLRenderTarget(w, h, params);
+  }
+  if (!rtC || rtC.width !== w || rtC.height !== h) {
+  rtC?.dispose?.();
+  rtC = new THREE.WebGLRenderTarget(w, h, params);
+}
+
+if (!rtD || rtD.width !== w || rtD.height !== h) {
+  rtD?.dispose?.();
+  rtD = new THREE.WebGLRenderTarget(w, h, params);
+}
+
+  // ===== Normals RT (для контуров) =====
+if (!rtN || rtN.width !== w || rtN.height !== h) {
+  rtN?.dispose?.();
+  rtN = new THREE.WebGLRenderTarget(w, h, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    depthBuffer: true,
+    stencilBuffer: false,
+  });
+
+  // depthTexture нужен, чтобы в шейдере понимать "что ближе"
+  rtN.depthTexture = new THREE.DepthTexture(w, h);
+  rtN.depthTexture.type = THREE.UnsignedShortType;
+}
+const isAndroid = /Android/i.test(navigator.userAgent);
+
+// На Android MSAA в render targets ломает depth и даёт 1282
+const samples = isAndroid ? 0 : rtSamples;
+
+rtA.samples = samples;
+rtB.samples = samples;
+rtC.samples = samples;
+rtD.samples = samples;
+
+if (rtN) {
+  rtN.samples = samples;
+}
+
+  if (!postScene) {
+    postScene = new THREE.Scene();
+    postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+    const mat = new THREE.ShaderMaterial({
+uniforms: {
+  t00: { value: null }, // body semi + sec semi
+  t10: { value: null }, // body opaque + sec semi
+  t01: { value: null }, // body semi + sec opaque
+  t11: { value: null }, // body opaque + sec opaque
+  tN: { value: null },          // normal texture
+tDepth: { value: null },      // depth texture (rtN.depthTexture)
+uTexel: { value: new THREE.Vector2(1 / 1024, 1 / 1024) }, // будет обновляться
+uOutlineOn: { value: 0.0 },   // 0/1
+uDepthK: { value: 1.0 },      // чувствительность по depth
+uNormK: { value: 1.0 },       // чувствительность по нормалям
+  uBodyMix: { value: 0 },
+  uSecMix: { value: 0.5 },
+},
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = vec4(position.xy, 0.0, 1.0);
+        }
+      `,
+fragmentShader: `
+precision highp float;
+
+varying vec2 vUv;
+
+uniform sampler2D t00;
+uniform sampler2D t10;
+uniform sampler2D t01;
+uniform sampler2D t11;
+uniform sampler2D tN;
+uniform sampler2D tDepth;
+uniform vec2 uTexel;
+uniform float uOutlineOn;
+uniform float uDepthK;
+uniform float uNormK;
+float edgeDepth(vec2 uv) {
+  float d = texture2D(tDepth, uv).r;
+  float dR = texture2D(tDepth, uv + vec2(uTexel.x, 0.0)).r;
+  float dU = texture2D(tDepth, uv + vec2(0.0, uTexel.y)).r;
+  return max(abs(d - dR), abs(d - dU));
+}
+
+float edgeNormal(vec2 uv) {
+  vec3 n  = texture2D(tN, uv).xyz * 2.0 - 1.0;
+  vec3 nR = texture2D(tN, uv + vec2(uTexel.x, 0.0)).xyz * 2.0 - 1.0;
+  vec3 nU = texture2D(tN, uv + vec2(0.0, uTexel.y)).xyz * 2.0 - 1.0;
+  float a = max(length(n - nR), length(n - nU));
+  return a;
+}
+
+uniform float uBodyMix;
+uniform float uSecMix;
+
+// Простой вывод в sRGB (как у тебя)
+vec3 toSRGB(vec3 c) {
+  return pow(max(c, 0.0), vec3(1.0 / 2.2));
+}
+
+void main() {
+  vec4 c00 = texture2D(t00, vUv);
+  vec4 c10 = texture2D(t10, vUv);
+  vec4 c01 = texture2D(t01, vUv);
+  vec4 c11 = texture2D(t11, vUv);
+
+  float b = clamp(uBodyMix, 0.0, 1.0);
+  float s = clamp(uSecMix, 0.0, 1.0);
+
+  // сначала микс по телу
+  vec4 semiSec = mix(c00, c10, b);
+  vec4 opaSec  = mix(c01, c11, b);
+
+  // потом микс по сечениям
+  vec4 outC = mix(semiSec, opaSec, s);
+  vec3 col = outC.rgb;
+
+if (uOutlineOn > 0.5) {
+  float ed = edgeDepth(vUv) * uDepthK;
+  float en = edgeNormal(vUv) * uNormK;
+
+  // пороги подбираем мягко (без резких скачков)
+  float e = max(
+    smoothstep(0.002, 0.01, ed),
+    smoothstep(0.10, 0.35, en)
+  );
+
+  // белая линия
+  col = mix(col, vec3(1.0), e);
+}
+
+gl_FragColor = vec4(toSRGB(col), outC.a);
+}
+`,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    });
+
+    const geo = new THREE.PlaneGeometry(2, 2);
+    postQuad = new THREE.Mesh(geo, mat);
+    postScene.add(postQuad);
+  }
+}
+
+function renderWithInsetBlend() {
+  if (!renderer || !camera) return;
+
+  ensureBlendResources();
+
+  // --- helpers: сохранить/применить override ---
+  function saveStates(mats) {
+    const saved = [];
+    for (const m of mats) {
+      if (!m) continue;
+      saved.push({
+        m,
+        transparent: m.transparent,
+        opacity: m.opacity,
+        depthWrite: m.depthWrite,
+        depthTest: m.depthTest,
+      });
+    }
+    return saved;
+  }
+
+  function applyOpaque(mats) {
+    for (const m of mats) {
+      if (!m) continue;
+      m.transparent = false;
+      m.opacity = 1;
+      m.depthWrite = true;
+      m.depthTest = true;
+      m.needsUpdate = true;
+    }
+  }
+
+  function restoreStates(saved) {
+    for (const s of saved) {
+      const m = s.m;
+      m.transparent = s.transparent;
+      m.opacity = s.opacity;
+      m.depthWrite = s.depthWrite;
+      m.depthTest = s.depthTest;
+      m.needsUpdate = true;
+    }
+  }
+
+  // Сохраняем состояния обоих групп
+  const savedBody = saveStates(insetControlledMaterials);
+  const savedSec  = saveStates(insetSectionMaterials);
+
+  // 1) T00: body как есть + sec как есть (semi)
+  renderer.setRenderTarget(rtA);
+  renderer.clear(true, true, true);
+  renderer.render(scene, camera);
+
+  // 2) T10: body opaque + sec semi
+  applyOpaque(insetControlledMaterials);
+  renderer.setRenderTarget(rtB);
+  renderer.clear(true, true, true);
+  renderer.render(scene, camera);
+  restoreStates(savedBody);
+
+  // 3) T01: body semi + sec opaque
+  applyOpaque(insetSectionMaterials);
+  renderer.setRenderTarget(rtC);
+  renderer.clear(true, true, true);
+  renderer.render(scene, camera);
+  restoreStates(savedSec);
+
+// 4) T11: body opaque + sec opaque
+applyOpaque(insetControlledMaterials);
+applyOpaque(insetSectionMaterials);
+renderer.setRenderTarget(rtD);
+renderer.clear(true, true, true);
+renderer.render(scene, camera);
+
+// ===== Normals + Depth pass (для контуров) =====
+if (outlineEnabled) {
+
+  // ✅ временно прячем сечения, чтобы их НЕ было в normals-pass (и не было контура по ним)
+  const hiddenSections = [];
+  if (currentModel && Array.isArray(insetSectionMaterials) && insetSectionMaterials.length) {
+    const secSet = new Set(insetSectionMaterials);
+
+    currentModel.traverse((obj) => {
+      if (!obj.isMesh) return;
+
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      const isSectionMesh = mats.some((m) => m && secSet.has(m));
+
+      if (isSectionMesh && obj.visible) {
+        hiddenSections.push(obj);
+        obj.visible = false;
+      }
+    });
+  }
+
+  const prevOverride = scene.overrideMaterial;
+  scene.overrideMaterial = new THREE.MeshNormalMaterial();
+
+  renderer.setRenderTarget(rtN);
+  renderer.clear(true, true, true);
+  renderer.render(scene, camera);
+
+  scene.overrideMaterial = prevOverride;
+
+  // ✅ возвращаем видимость сечений обратно
+  for (const obj of hiddenSections) obj.visible = true;
+}
+
+// Возвращаем всё как было
+restoreStates(savedBody);
+restoreStates(savedSec);
+
+  // 5) Финальный вывод (2 независимых микса)
+  renderer.setRenderTarget(null);
+
+  postQuad.material.uniforms.t00.value = rtA.texture;
+  postQuad.material.uniforms.t10.value = rtB.texture;
+  postQuad.material.uniforms.t01.value = rtC.texture;
+  postQuad.material.uniforms.t11.value = rtD.texture;
+
+  postQuad.material.uniforms.uBodyMix.value = insetBlendFactor;
+  postQuad.material.uniforms.uSecMix.value = insetSectionBlendFactor;
+  // ===== Передаём normals и depth в шейдер =====
+// ===== Передаём normals/depth в шейдер только когда контуры включены =====
+postQuad.material.uniforms.uOutlineOn.value = outlineEnabled ? 1.0 : 0.0;
+
+if (outlineEnabled) {
+  postQuad.material.uniforms.tN.value = rtN.texture;
+  postQuad.material.uniforms.tDepth.value = rtN.depthTexture;
+  const k = Math.max(0.5, Number(outlineThicknessPx) || 1);
+postQuad.material.uniforms.uTexel.value.set(k / rtN.width, k / rtN.height);
+} else {
+  // чтобы шейдер случайно не читал мусор
+  postQuad.material.uniforms.tN.value = null;
+  postQuad.material.uniforms.tDepth.value = null;
+}
+
+  renderer.clear(true, true, true);
+  renderer.render(postScene, postCam);
+}
 function setupLights() {
   const zenith = new THREE.DirectionalLight(0xf5f8ff, 0.0);
   zenith.position.set(0, 11, 2);
@@ -126,6 +722,51 @@ function setupLights() {
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.04));
   scene.add(new THREE.HemisphereLight(0xffffff, 0x0a0a0a, 0.07));
+}
+
+export function setInsetNeutralLighting(enabled) {
+  if (!scene) return;
+
+  const k = 0.5; // общий коэффициент яркости для врезок
+
+  scene.traverse((obj) => {
+    if (!obj.isLight) return;
+
+    if (enabled) {
+      obj.color.set(0xffffff);
+
+      if (obj.intensity === 1.85) obj.intensity = 1.85 * k; // key
+      else if (obj.intensity === 0.35) obj.intensity = 0.35 * k; // fill
+      else if (obj.intensity === 0.5) obj.intensity = 0.5 * k; // rim
+      else if (obj.intensity === 0.1) obj.intensity = 0.1 * k; // coldRim
+      else if (obj.intensity === 0.04) obj.intensity = 0.04 * k; // ambient
+      else if (obj.intensity === 0.07) obj.intensity = 0.07 * k; // hemisphere
+    } else {
+      // возвращаем исходные значения
+      if (obj.intensity === 1.85 * k) {
+        obj.color.set(0xffc4a0);
+        obj.intensity = 1.85;
+      }
+      else if (obj.intensity === 0.35 * k) {
+        obj.color.set(0xcad8ff);
+        obj.intensity = 0.35;
+      }
+      else if (obj.intensity === 0.5 * k) {
+        obj.color.set(0xffffff);
+        obj.intensity = 0.5;
+      }
+      else if (obj.intensity === 0.1 * k) {
+        obj.color.set(0xd8e4ff);
+        obj.intensity = 0.1;
+      }
+      else if (obj.intensity === 0.04 * k) {
+        obj.intensity = 0.04;
+      }
+      else if (obj.intensity === 0.07 * k) {
+        obj.intensity = 0.07;
+      }
+    }
+  });
 }
 
 function initControls(canvas) {
