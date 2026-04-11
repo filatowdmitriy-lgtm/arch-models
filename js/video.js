@@ -33,7 +33,10 @@ let emptyEl = null;
 let toolbarEl = null;
 let tab3dBtn = null;
 let tabSchemeBtn = null;
+let tabPhotoBtn = null;
 let tabVideoBtn = null;
+let tabsRowEl = null;
+let tabsWrapEl = null;
 
 let active = false;
 let onPlayCb = null;
@@ -101,8 +104,7 @@ function showListMode() {
   isPlayerOpen = false;
 
   if (playerWrap) playerWrap.style.display = "none";
-  if (listEl) listEl.style.display = "grid";
-
+  if (listEl) listEl.style.display = "";
   showTabs();
   hideNavPanel();
 }
@@ -118,15 +120,11 @@ function showPlayerMode() {
 }
 
 function hideTabs() {
-  if (tab3dBtn) tab3dBtn.style.display = "none";
-  if (tabSchemeBtn) tabSchemeBtn.style.display = "none";
-  if (tabVideoBtn) tabVideoBtn.style.display = "none";
+  if (tabsRowEl) tabsRowEl.style.display = "none";
 }
 
 function showTabs() {
-  if (tab3dBtn) tab3dBtn.style.display = "";
-  if (tabSchemeBtn) tabSchemeBtn.style.display = "";
-  if (tabVideoBtn) tabVideoBtn.style.display = "";
+  if (tabsRowEl) tabsRowEl.style.display = "";
 }
 
 function showNavPanel() {
@@ -213,6 +211,8 @@ function ensurePlayerDom() {
   // Events
 playerVideo.addEventListener("play", () => {
   setLoading(false);
+  hideTabs();
+  hideNavPanel();
   if (onPlayCb) onPlayCb();
   document.body.classList.add("video-playing");
 });
@@ -220,9 +220,10 @@ playerVideo.addEventListener("play", () => {
 
 playerVideo.addEventListener("pause", () => {
   setLoading(false);
+  showTabs();
+  showNavPanel();
   if (onPauseCb) onPauseCb();
   document.body.classList.remove("video-playing");
-  showNavPanel(); // на паузе всегда видно
 });
 
 
@@ -277,66 +278,51 @@ function ensureNavPanel() {
 
   navPanel = document.createElement("div");
   navPanel.id = "videoNavPanel";
-  navPanel.style.cssText = `
-    display: none;
-    width: 100%;
-    gap: 10px;
-    align-items: center;
-    justify-content: space-between;
-  `;
+  navPanel.className = "video-nav-panel";
 
-  // Левая кнопка "к карточкам"
-  btnBack = document.createElement("button");
-  btnBack.type = "button";
-  btnBack.textContent = "⬅ К карточкам";
-  btnBack.style.cssText = `
-    appearance: none;
-    border: 1px solid rgba(255,255,255,0.18);
-    background: rgba(255,255,255,0.08);
-    color: rgba(255,255,255,0.92);
-    border-radius: 999px;
-    padding: 10px 12px;
-    font: 600 13px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial;
-    flex: 0 0 auto;
-  `;
+  const left = document.createElement("div");
+  left.className = "video-nav-left";
 
   const right = document.createElement("div");
-  right.style.cssText = `
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    justify-content: flex-end;
-    flex: 0 0 auto;
+  right.className = "video-nav-right";
+
+  btnBack = document.createElement("button");
+  btnBack.type = "button";
+  btnBack.className = "video-nav-btn back";
+  btnBack.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15 18l-6-6 6-6"></path>
+    </svg>
+    <span class="video-nav-btn-label">К карточкам</span>
   `;
 
   btnPrev = document.createElement("button");
   btnPrev.type = "button";
-  btnPrev.textContent = "⏮";
-  btnPrev.style.cssText = `
-    width: 44px; height: 44px;
-    border-radius: 999px;
-    border: 1px solid rgba(255,255,255,0.18);
-    background: rgba(255,255,255,0.08);
-    color: rgba(255,255,255,0.92);
-    font: 700 16px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial;
+  btnPrev.className = "video-nav-btn icon";
+  btnPrev.setAttribute("aria-label", "Предыдущее видео");
+  btnPrev.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+      <path d="M11 6v12L2.5 12 11 6z"></path>
+      <path d="M21 6v12l-8.5-6L21 6z"></path>
+    </svg>
   `;
 
   btnNext = document.createElement("button");
   btnNext.type = "button";
-  btnNext.textContent = "⏭";
-  btnNext.style.cssText = `
-    width: 44px; height: 44px;
-    border-radius: 999px;
-    border: 1px solid rgba(255,255,255,0.18);
-    background: rgba(255,255,255,0.08);
-    color: rgba(255,255,255,0.92);
-    font: 700 16px/1 system-ui,-apple-system,Segoe UI,Roboto,Arial;
+  btnNext.className = "video-nav-btn icon";
+  btnNext.setAttribute("aria-label", "Следующее видео");
+  btnNext.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+      <path d="M13 6v12l8.5-6L13 6z"></path>
+      <path d="M3 6v12l8.5-6L3 6z"></path>
+    </svg>
   `;
 
+  left.appendChild(btnBack);
   right.appendChild(btnPrev);
   right.appendChild(btnNext);
 
-  navPanel.appendChild(btnBack);
+  navPanel.appendChild(left);
   navPanel.appendChild(right);
 
   // Вставляем панель внутрь toolbar (там где табы)
@@ -445,23 +431,6 @@ function render() {
   listEl.innerHTML = "";
   cards = [];
   currentIndex = -1;
-
-  // Grid 2 колонки на ширине, 1 колонка на узких
-  listEl.style.display = "grid";
-  listEl.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
-  listEl.style.gap = "10px";
-  listEl.style.padding = "12px";
-  listEl.style.overflowY = "auto";
-  listEl.style.webkitOverflowScrolling = "touch";
-
-  // на совсем узких — 1 колонка
-  const setCols = () => {
-    const w = listEl.clientWidth || window.innerWidth || 360;
-    listEl.style.gridTemplateColumns = w < 520 ? "1fr" : "repeat(2, minmax(0, 1fr))";
-  };
-  setCols();
-  window.addEventListener("resize", setCols, { passive: true });
-
   const has = Array.isArray(videoList) && videoList.length > 0;
   if (emptyEl) emptyEl.style.display = has ? "none" : "block";
   if (!has) return;
@@ -594,10 +563,25 @@ export function initVideo(refs, callbacks = {}) {
   listEl = refs?.listEl || null;
   emptyEl = refs?.emptyEl || null;
 
-  toolbarEl = refs?.toolbarEl || null;
-  tab3dBtn = refs?.tab3dBtn || null;
-  tabSchemeBtn = refs?.tabSchemeBtn || null;
-  tabVideoBtn = refs?.tabVideoBtn || null;
+toolbarEl = refs?.toolbarEl || null;
+tab3dBtn = refs?.tab3dBtn || null;
+tabSchemeBtn = refs?.tabSchemeBtn || null;
+tabPhotoBtn = refs?.tabPhotoBtn || null;
+tabVideoBtn = refs?.tabVideoBtn || null;
+
+tabsRowEl =
+  tab3dBtn?.closest(".viewer-tabs-row") ||
+  tabSchemeBtn?.closest(".viewer-tabs-row") ||
+  tabPhotoBtn?.closest(".viewer-tabs-row") ||
+  tabVideoBtn?.closest(".viewer-tabs-row") ||
+  null;
+
+tabsWrapEl =
+  tab3dBtn?.closest(".viewer-tabs") ||
+  tabSchemeBtn?.closest(".viewer-tabs") ||
+  tabPhotoBtn?.closest(".viewer-tabs") ||
+  tabVideoBtn?.closest(".viewer-tabs") ||
+  null;
 
   onPlayCb = callbacks.onPlay || null;
   onPauseCb = callbacks.onPause || null;

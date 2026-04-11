@@ -16,14 +16,14 @@ const MAIN_MENU = [
     id: "section_arch",
     name: "Архитектурные детали",
     desc: "3D + Построение + Видео",
-    preview: "textures/doric/preview.png",
+    preview: "textures/preview/preview1.png",
     thumbLetter: "А"
   },
   {
     id: "section_insets",
     name: "Врезки",
     desc: "3D врезок",
-    preview: "textures/3/preview.png",
+    preview: "textures/preview/preview2.png",
     thumbLetter: "В"
   }
 ];
@@ -189,14 +189,17 @@ function initApp() {
   const galleryEl = document.getElementById("gallery");
   const viewerWrapperEl = document.getElementById("viewerWrapper");
 
-  const modelLabelEl = document.getElementById("modelLabel");
-  const prevBtn = document.getElementById("prevBtn");
-  const nextBtn = document.getElementById("nextBtn");
-  const backBtn = document.getElementById("backBtn");
-
-  const tab3dBtn = document.getElementById("tab3d");
-  const tabSchemeBtn = document.getElementById("tabScheme");
-  const tabVideoBtn = document.getElementById("tabVideo");
+const modelLabelEl = document.getElementById("modelLabel");
+const prevBtn = document.getElementById("prevBtn");
+const nextBtn = document.getElementById("nextBtn");
+const backBtn = document.getElementById("backBtn");
+const bottomPrevBtn = document.getElementById("bottomPrevBtn");
+const bottomNextBtn = document.getElementById("bottomNextBtn");
+const bottomBackBtn = document.getElementById("bottomBackBtn");
+const tab3dBtn = document.getElementById("tab3d");
+const tabSchemeBtn = document.getElementById("tabScheme");
+const tabPhotoBtn = document.getElementById("tabPhoto");
+const tabVideoBtn = document.getElementById("tabVideo");
 
   const canvasEl = document.getElementById("canvas");
 
@@ -251,10 +254,14 @@ const breadcrumbSectionLabel = document.getElementById("breadcrumbSectionLabel")
     prevBtn,
     nextBtn,
     backBtn,
+bottomPrevBtn,
+bottomNextBtn,
+bottomBackBtn,
 
-    tab3dBtn,
-    tabSchemeBtn,
-    tabVideoBtn,
+tab3dBtn,
+tabSchemeBtn,
+tabPhotoBtn,
+tabVideoBtn,
 
     canvasEl,
 
@@ -277,9 +284,13 @@ videoEmptyEl,     // ADDED
   prevBtn,
   nextBtn,
   backBtn,
-  tab3dBtn,
-  tabSchemeBtn,
-  tabVideoBtn,
+bottomPrevBtn,
+bottomNextBtn,
+bottomBackBtn,
+tab3dBtn,
+tabSchemeBtn,
+tabPhotoBtn,
+tabVideoBtn,
   canvasEl,
   loadingEl,
   loadingTextEl,
@@ -316,6 +327,7 @@ function setBreadcrumbSection(title) {
 // маленький хелпер: показать список карточек в #gallery
 function showMainMenu() {
   currentScreen = "main";
+  insetViewer.showGallery(); // 🔥 СБРОС inset-mode и всего состояния
     setBreadcrumbVisible(false);
   setBreadcrumbSection("");
     setBrandVisible(true);

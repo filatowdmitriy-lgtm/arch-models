@@ -4,21 +4,30 @@
 import * as THREE from "three";
 import {
   setModel as threeSetModel,
+  clearModel as threeClearModel,
   setInsetBlendEnabled,
   setInsetBlendState,
   setInsetSectionBlendState,
+  setOutlineExcludedMaterials,
   setCadOverlay,
   clearCadOverlay,
   setOutlineEnabled,
   setOutlineStyle,
   setCadAlpha,
-  setInsetNeutralLighting
+  setInsetNeutralLighting,
+  setSectionEdgesOverlay,
+  clearSectionEdgesOverlay,
+  setSectionEdgesAlpha
 } from "./threeViewer.js";
 import { loadModel } from "./models.js";
 import { INSETS, getInsetMeta } from "./insetsModels.js";
+import { initScheme, setSchemeImages, activateScheme, deactivateScheme, resetSchemeView } from "./scheme.js";
+import { initVideo, setVideoList, activateVideo, deactivateVideo } from "./video.js";
 
 let dom = null;
 let currentId = null;
+let currentMeta = null;
+let activeView = "3d";
 // ✅ защита от гонок при быстрых переключениях врезок
 let insetLoadSeq = 0;
 // ✅ Материалы, которыми управляет ползунок прозрачности
@@ -31,15 +40,98 @@ export function initInsetsViewer(refs) {
   dom = { ...refs };
   if (!dom.canvasEl) throw new Error("initInsetsViewer: canvasEl missing");
 
+  if (!dom.viewerToolbarEl) dom.viewerToolbarEl = document.querySelector(".viewer-toolbar");
+  if (!dom.schemeOverlayEl) dom.schemeOverlayEl = document.getElementById("schemeOverlay");
+  if (!dom.schemeImgEl) dom.schemeImgEl = document.getElementById("schemeImage");
+  if (!dom.videoOverlayEl) dom.videoOverlayEl = document.getElementById("videoOverlay");
+  if (!dom.videoListEl) dom.videoListEl = document.getElementById("videoList");
+  if (!dom.videoEmptyEl) dom.videoEmptyEl = document.getElementById("videoEmpty");
+  if (!dom.schemePrevBtn) dom.schemePrevBtn = document.getElementById("schemePrevBtn");
+  if (!dom.schemeNextBtn) dom.schemeNextBtn = document.getElementById("schemeNextBtn");
+
+  initScheme({
+    overlayEl: dom.schemeOverlayEl,
+    imgEl: dom.schemeImgEl,
+    prevBtnEl: dom.schemePrevBtn,
+    nextBtnEl: dom.schemeNextBtn,
+    context: "inset",
+    onUiVisibility: (hidden) => {
+      if (activeView !== "scheme") {
+        setUiHidden(false);
+        return;
+      }
+      setUiHidden(hidden);
+    }
+  });
+
+initVideo(
+  {
+    overlayEl: dom.videoOverlayEl,
+    listEl: dom.videoListEl,
+    emptyEl: dom.videoEmptyEl,
+    toolbarEl: dom.viewerToolbarEl,
+    tab3dBtn: dom.tab3dBtn,
+    tabSchemeBtn: dom.tabSchemeBtn,
+    tabPhotoBtn: dom.tabPhotoBtn,
+    tabVideoBtn: dom.tabVideoBtn
+  },
+    {
+      onPlay: () => {
+        setUiHidden(false);
+        document.body.classList.add("video-playing");
+      },
+      onPause: () => {
+        setUiHidden(false);
+        document.body.classList.remove("video-playing");
+      }
+    }
+  );
+
 
 
   setupUiHandlers();
+  setupInset3dUiAutoHide();
+window.addEventListener("resize", () => {
+  if (activeView === "scheme") {
+    scheduleSchemeRelayout();
+  }
+
+  if (activeView === "video") {
+    syncVideoOverlayOffset();
+  }
+});
+
+  window.addEventListener("orientationchange", () => {
+  if (activeView === "scheme") {
+    scheduleSchemeRelayout();
+  }
+
+  if (activeView === "video") {
+    syncVideoOverlayOffset();
+  }
+});
+
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", () => {
+    if (activeView === "scheme") {
+      scheduleSchemeRelayout();
+    }
+
+    if (activeView === "video") {
+      syncVideoOverlayOffset();
+    }
+  });
+}
+
+  requestAnimationFrame(() => {
+    syncVideoOverlayOffset();
+  });
 
   return {
     openById,
-    showGallery,     // вернуться к главному меню/галерее
-    enterInsetMode,  // включить inset-mode (скрыть вкладки)
-    exitInsetMode,   // выключить inset-mode
+    showGallery,
+    enterInsetMode,
+    exitInsetMode,
   };
 }
 
@@ -50,7 +142,7 @@ function enterInsetMode() {
   setInsetNeutralLighting(true);
     // Контуры только во Врезках
   setOutlineEnabled(true);
-  setOutlineStyle({ thicknessPx: 1.5, edgesAngle: 60 });
+  setOutlineStyle({ thicknessPx: 2.0, edgesAngle: 60 });
   setInsetBlendState(0, []); // ✅ пока модель не загружена — материалов ещё нет
   setInsetSectionBlendState(0.5, []); // пока не загрузили — материалов нет, но коэффициент фиксируем
 
@@ -62,11 +154,48 @@ function enterInsetMode() {
 
 function exitInsetMode() {
   document.body.classList.remove("inset-mode");
-    setInsetBlendState(0, []);
+  document.body.classList.remove("inset-has-3d");
+  document.body.classList.remove("inset-no-tabs");
+  document.body.classList.remove("inset-view-3d");
+  document.body.classList.remove("inset-view-scheme");
+  document.body.classList.remove("inset-view-video");
+  document.body.classList.remove("video-playing");
+  setInsetBlendState(0, []);
+  setInsetSectionBlendState(0.5, []);
+  setOutlineExcludedMaterials([]);
   setInsetBlendEnabled(false);
   setInsetNeutralLighting(false);
-    clearCadOverlay();
-    setOutlineEnabled(false);
+
+  clearCadOverlay();
+  clearSectionEdgesOverlay();
+  setOutlineEnabled(false);
+
+  deactivateScheme();
+  deactivateVideo();
+
+  if (dom?.schemeOverlayEl) dom.schemeOverlayEl.style.display = "none";
+  if (dom?.videoOverlayEl) dom.videoOverlayEl.style.display = "none";
+    setCanvasInteractionEnabled(true);
+  activeView = "3d";
+}
+
+function hardResetInsetRuntime() {
+  exitInsetMode();
+  threeClearModel();
+
+  controlledMaterials = [];
+  sectionMaterials = [];
+  currentOpacity = 1;
+
+  if (dom?.insetOpacitySlider) {
+    dom.insetOpacitySlider.value = "100";
+  }
+
+  setCadAlpha(0);
+  setSectionEdgesAlpha(0);
+
+  setCanvasInteractionEnabled(true);
+  setUiHidden(false);
 }
 // ✅ Собрать все материалы с нужным именем (например "3") внутри загруженной модели
 function collectMaterialsByName(root, name) {
@@ -84,6 +213,24 @@ function collectMaterialsByName(root, name) {
 
   // ✅ Убираем дубликаты (часто один material шарится несколькими mesh)
   return Array.from(new Set(out));
+}
+
+function getSectionNameSets(meta) {
+  const primary = Array.isArray(meta?.primarySectionMaterialNames)
+    ? meta.primarySectionMaterialNames.map(String)
+    : (
+        Array.isArray(meta?.sectionMaterialNames)
+          ? meta.sectionMaterialNames.map(String)
+          : []
+      );
+
+  const auxiliary = Array.isArray(meta?.auxSectionMaterialNames)
+    ? meta.auxSectionMaterialNames.map(String)
+    : [];
+
+  const all = Array.from(new Set([...primary, ...auxiliary]));
+
+  return { primary, auxiliary, all };
 }
 
 // ✅ Применить текущую прозрачность ко всем "управляемым" материалам
@@ -111,17 +258,11 @@ function applyOpacityToControlled() {
 // ✅ Применить “плоские” цвета материалам сечений (например "2" и "3")
 // meta.materialColors ожидается как объект: { "2": "#ff3b30", "3": "#34c759" }
 function applyInsetColors(root, meta) {
-if (!root || !meta) return;
+  if (!root || !meta) return;
 
-// цвета могут быть пустыми — это нормально
-const colors = meta.materialColors || {};
+  const colors = meta.materialColors || {};
+  const { primary, auxiliary, all } = getSectionNameSets(meta);
 
-// список материалов-сечений
-const sectionList =
-  Array.isArray(meta.sectionMaterialNames) && meta.sectionMaterialNames.length
-    ? meta.sectionMaterialNames
-    : ["3", "4"];
-  
   root.traverse((obj) => {
     if (!obj.isMesh) return;
 
@@ -130,42 +271,61 @@ const sectionList =
     for (const m of mats) {
       if (!m) continue;
 
-     const key = String(m.name);
-const isSection = sectionList.includes(key);
-const hex = colors[key];
+      const key = String(m.name);
+      const isPrimary = primary.includes(key);
+      const isAuxiliary = auxiliary.includes(key);
+      const isAnySection = all.includes(key);
+      const hex = colors[key];
 
-if (!isSection && !hex) continue;
+      if (!isAnySection && !hex) continue;
 
-// цвет — только если есть hex
-if (hex && m.color) m.color.set(hex);
+      // цвет — если задан
+      if (hex && m.color) m.color.set(hex);
 
-// DoubleSide — если нужен всем
-m.side = THREE.DoubleSide;
+      m.side = THREE.DoubleSide;
 
-// матовый вид
-if ("metalness" in m) m.metalness = 0;
-if ("roughness" in m) m.roughness = 1;
+      if ("metalness" in m) m.metalness = 0;
+      if ("roughness" in m) m.roughness = 1;
 
-// только сечения — плёнка
-if (isSection) {
-  m.transparent = true;
-  m.opacity = 0.6;
-  m.depthWrite = false;
-  m.depthTest = true;
+      // ОСНОВНЫЕ СЕЧЕНИЯ: заливка + контур
+      if (isPrimary) {
+        m.transparent = true;
+        m.opacity = 0.6;
+        m.depthWrite = false;
+        m.depthTest = true;
 
-  m.forceSinglePass = true;
+        m.forceSinglePass = true;
 
-  m.polygonOffset = true;
-  m.polygonOffsetFactor = 1;
-  m.polygonOffsetUnits = 1;
+        m.polygonOffset = true;
+        m.polygonOffsetFactor = 1;
+        m.polygonOffsetUnits = 1;
 
-  m.blending = THREE.NormalBlending;
+        m.blending = THREE.NormalBlending;
 
-  const idx = sectionList.indexOf(key);
-  obj.renderOrder = 20 + (idx >= 0 ? idx : 0);
-}
+        const idx = primary.indexOf(key);
+        obj.renderOrder = 20 + (idx >= 0 ? idx : 0);
+      }
 
-m.needsUpdate = true;
+      // ВСПОМОГАТЕЛЬНЫЕ СЕЧЕНИЯ: без заливки, только контур
+      if (isAuxiliary) {
+        m.transparent = true;
+        m.opacity = 0.0;
+        m.depthWrite = false;
+        m.depthTest = true;
+
+        m.forceSinglePass = true;
+
+        m.polygonOffset = true;
+        m.polygonOffsetFactor = 1;
+        m.polygonOffsetUnits = 1;
+
+        m.blending = THREE.NormalBlending;
+
+        const idx = auxiliary.indexOf(key);
+        obj.renderOrder = 40 + (idx >= 0 ? idx : 0);
+      }
+
+      m.needsUpdate = true;
     }
   });
 }
@@ -216,40 +376,75 @@ function buildCadSpecFromModel(root, cadMeta) {
 function setupUiHandlers() {
   const { prevBtn, nextBtn, backBtn } = dom;
 
-  // Prev / Next ходят по INSETS
-  prevBtn?.addEventListener("click", () => {
+  // Prev / Next / Галерея для Врезок:
+  // вешаем в capture-режиме и глушим событие,
+  // чтобы архитектурный viewer не вмешивался
+  prevBtn?.addEventListener("click", (e) => {
+    if (!document.body.classList.contains("inset-mode")) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
     if (!currentId) return;
     const idx = getIndex(currentId);
     if (idx < 0) return;
+
     const nextIdx = (idx - 1 + INSETS.length) % INSETS.length;
     openById(INSETS[nextIdx].id);
-  });
+  }, true);
 
-  nextBtn?.addEventListener("click", () => {
+  nextBtn?.addEventListener("click", (e) => {
+    if (!document.body.classList.contains("inset-mode")) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
     if (!currentId) return;
     const idx = getIndex(currentId);
     if (idx < 0) return;
+
     const nextIdx = (idx + 1) % INSETS.length;
     openById(INSETS[nextIdx].id);
-  });
+  }, true);
 
   // Кнопка "Галерея" возвращает в галерею
-  backBtn?.addEventListener("click", () => {
+  backBtn?.addEventListener("click", (e) => {
+    if (!document.body.classList.contains("inset-mode")) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
     showGallery();
+  }, true);
+
+  dom.tab3dBtn?.addEventListener("click", () => {
+    if (!currentMeta) return;
+    if (!getInsetCapabilities(currentMeta).has3d) return;
+    setViewMode("3d");
   });
 
-  // Вкладки 3D/Построение/Видео в inset-mode скрыты CSS'ом,
-  // но на всякий случай удаляем active-классы
-  dom.tab3dBtn?.classList.add("active");
-  dom.tabSchemeBtn?.classList.remove("active");
-  dom.tabVideoBtn?.classList.remove("active");
-    // ✅ Ползунок прозрачности (работает только для выбранного материала, например "3")
-dom.insetOpacitySlider?.addEventListener("input", () => {
-  const v = Number(dom.insetOpacitySlider.value || 100); // 0..100
-  const uiOpacity = Math.max(0, Math.min(1, v / 100));   // 0..1
-  const cadAlpha = Math.min(1, Math.max(0, (1 - uiOpacity) / 0.3));
-setCadAlpha(cadAlpha);
+  dom.tabSchemeBtn?.addEventListener("click", () => {
+    if (!currentMeta) return;
+    if (!getInsetCapabilities(currentMeta).hasScheme) return;
+    setViewMode("scheme");
+  });
 
+  dom.tabVideoBtn?.addEventListener("click", () => {
+    if (!currentMeta) return;
+    if (!getInsetCapabilities(currentMeta).hasVideo) return;
+    setViewMode("video");
+  });
+
+  // ✅ Ползунок прозрачности (работает только для выбранного материала, например "3")
+dom.insetOpacitySlider?.addEventListener("input", () => {
+const v = Number(dom.insetOpacitySlider.value || 100); // 0..100
+const uiOpacity = Math.max(0, Math.min(1, v / 100));   // 0..1
+const cadAlpha = Math.min(1, Math.max(0, (1 - uiOpacity) / 0.3));
+setCadAlpha(cadAlpha);
+setSectionEdgesAlpha(cadAlpha);
   // 0..0.7 — реальная прозрачность как раньше
   if (uiOpacity <= 0.7) {
     currentOpacity = uiOpacity;
@@ -285,16 +480,260 @@ function getIndex(id) {
   return INSETS.findIndex((m) => m.id === id);
 }
 
+function setUiHidden(hidden) {
+  const toolbar = dom?.viewerToolbarEl || document.querySelector(".viewer-toolbar");
+  const statusEl = dom?.statusEl;
+  const bottomNavEl = document.getElementById("viewerBottomNav");
+  if (!toolbar || !statusEl) return;
+
+  toolbar.classList.toggle("ui-hidden", !!hidden);
+  statusEl.classList.toggle("ui-hidden", !!hidden);
+  bottomNavEl?.classList.toggle("ui-hidden", !!hidden);
+}
+
+function setupInset3dUiAutoHide() {
+  const { canvasEl, viewerWrapperEl } = dom;
+  if (!canvasEl || !viewerWrapperEl) return;
+
+  let isDown = false;
+  let moved = false;
+  let startX = 0;
+  let startY = 0;
+
+  const MOVE_THRESHOLD = 6;
+
+  const isViewerVisible = () => viewerWrapperEl.classList.contains("visible");
+  const is3dActive = () => document.body.classList.contains("inset-mode") && activeView === "3d";
+
+  const getPoint = (e) => {
+    if (typeof e.clientX === "number") return { x: e.clientX, y: e.clientY };
+    const t = e.touches && e.touches[0];
+    return { x: t ? t.clientX : 0, y: t ? t.clientY : 0 };
+  };
+
+  const onDown = (e) => {
+    if (!isViewerVisible() || !is3dActive()) return;
+    isDown = true;
+    moved = false;
+    const p = getPoint(e);
+    startX = p.x;
+    startY = p.y;
+  };
+
+  const onMove = (e) => {
+    if (!isDown) return;
+    if (!isViewerVisible() || !is3dActive()) return;
+
+    const p = getPoint(e);
+    const dx = p.x - startX;
+    const dy = p.y - startY;
+
+    if (!moved && Math.hypot(dx, dy) >= MOVE_THRESHOLD) {
+      moved = true;
+      setUiHidden(true);
+    }
+  };
+
+  const onUp = () => {
+    if (!isViewerVisible() || !is3dActive()) return;
+
+    if (!moved) {
+      setUiHidden(false);
+    }
+
+    isDown = false;
+  };
+
+  canvasEl.addEventListener("pointerdown", onDown, { passive: true });
+  canvasEl.addEventListener("pointermove", onMove, { passive: true });
+  window.addEventListener("pointerup", onUp, { passive: true });
+}
+
+function normalizeInsetSchemeUrl(url) {
+  if (!url) return url;
+
+  const s = String(url);
+  const isAbsolute =
+    /^https?:\/\//i.test(s) ||
+    s.startsWith("/") ||
+    s.startsWith("data:");
+
+  return isAbsolute
+    ? s
+    : `https://api.apparchi.ru/?path=${encodeURIComponent(s)}`;
+}
+
+function getInsetCapabilities(meta) {
+  return {
+    has3d: !!(meta && (meta.sourcePath || meta.sourceId) && meta.id !== "inset_0"),
+    hasScheme: Array.isArray(meta?.schemes) && meta.schemes.length > 0,
+    hasVideo: Array.isArray(meta?.video) && meta.video.length > 0
+  };
+}
+
+function chooseStartView(meta) {
+  const { has3d, hasScheme, hasVideo } = getInsetCapabilities(meta);
+  if (has3d) return "3d";
+  if (hasScheme) return "scheme";
+  if (hasVideo) return "video";
+  return "3d";
+}
+
+function setInsetViewClass(mode) {
+  document.body.classList.remove("inset-view-3d", "inset-view-scheme", "inset-view-video");
+
+  if (mode === "3d") document.body.classList.add("inset-view-3d");
+  if (mode === "scheme") document.body.classList.add("inset-view-scheme");
+  if (mode === "video") document.body.classList.add("inset-view-video");
+}
+
+function setCanvasInteractionEnabled(enabled) {
+  if (!dom?.canvasEl) return;
+  dom.canvasEl.style.pointerEvents = enabled ? "auto" : "none";
+}
+
+function syncVideoOverlayOffset() {
+  const { viewerToolbarEl, viewerWrapperEl, videoOverlayEl } = dom || {};
+  if (!viewerToolbarEl || !viewerWrapperEl || !videoOverlayEl) return;
+
+  const toolbarRect = viewerToolbarEl.getBoundingClientRect();
+  const wrapperRect = viewerWrapperEl.getBoundingClientRect();
+
+  const topOffset = Math.max(0, Math.ceil(toolbarRect.bottom - wrapperRect.top + 12));
+  videoOverlayEl.style.setProperty("--video-overlay-top", `${topOffset}px`);
+}
+
+function scheduleSchemeRelayout() {
+  const rerun = () => {
+    resetSchemeView();
+  };
+
+  requestAnimationFrame(() => {
+    rerun();
+
+    requestAnimationFrame(() => {
+      rerun();
+    });
+  });
+
+  setTimeout(rerun, 120);
+}
+
+function configureViewTabsForInset(meta) {
+  currentMeta = meta;
+
+  const { has3d, hasScheme, hasVideo } = getInsetCapabilities(meta);
+
+  document.body.classList.toggle("inset-has-3d", has3d);
+  document.body.classList.remove("inset-no-tabs");
+
+  if (dom.tab3dBtn) {
+    dom.tab3dBtn.style.display = has3d ? "" : "none";
+    dom.tab3dBtn.classList.toggle("disabled", !has3d);
+  }
+
+  if (dom.tabSchemeBtn) {
+    dom.tabSchemeBtn.style.display = hasScheme ? "" : "none";
+    dom.tabSchemeBtn.classList.toggle("disabled", !hasScheme);
+  }
+
+    if (dom.tabPhotoBtn) {
+    dom.tabPhotoBtn.style.display = "none";
+    dom.tabPhotoBtn.classList.add("disabled");
+  }
+
+  if (dom.tabVideoBtn) {
+    dom.tabVideoBtn.style.display = hasVideo ? "" : "none";
+    dom.tabVideoBtn.classList.toggle("disabled", !hasVideo);
+  }
+
+  setSchemeImages(
+    hasScheme ? meta.schemes.map(normalizeInsetSchemeUrl) : []
+  );
+
+  setVideoList(
+    hasVideo ? meta.video : []
+  );
+}
+
+function setViewMode(mode) {
+  const prevView = activeView;
+  activeView = mode;
+  setInsetViewClass(mode);
+
+  const is3dMode = mode === "3d";
+  const isSchemeMode = mode === "scheme";
+  const isVideoMode = mode === "video";
+
+  if (dom.tab3dBtn) dom.tab3dBtn.classList.toggle("active", is3dMode);
+  if (dom.tabSchemeBtn) dom.tabSchemeBtn.classList.toggle("active", isSchemeMode);
+  if (dom.tabPhotoBtn) dom.tabPhotoBtn.classList.toggle("active", false);
+  if (dom.tabVideoBtn) dom.tabVideoBtn.classList.toggle("active", isVideoMode);
+
+  // Только 3D принимает pointer events от canvas
+  setCanvasInteractionEnabled(is3dMode);
+
+  // SCHEME
+  if (dom.schemeOverlayEl) {
+    dom.schemeOverlayEl.style.display = isSchemeMode ? "flex" : "none";
+
+    if (isSchemeMode) {
+      activateScheme();
+    } else if (prevView === "scheme") {
+      deactivateScheme();
+    }
+  }
+
+  // VIDEO
+  if (dom.videoOverlayEl) {
+    dom.videoOverlayEl.style.display = isVideoMode ? "block" : "none";
+
+    if (isVideoMode) {
+      syncVideoOverlayOffset();
+      activateVideo();
+    } else if (prevView === "video") {
+      deactivateVideo();
+      document.body.classList.remove("video-playing");
+    }
+  }
+
+  if (!isSchemeMode) {
+    setUiHidden(false);
+  }
+}
+
 export function showGallery() {
   const { galleryEl, viewerWrapperEl, statusEl } = dom;
+
+  deactivateScheme();
+  deactivateVideo();
+
+  if (dom?.schemeOverlayEl) dom.schemeOverlayEl.style.display = "none";
+  if (dom?.videoOverlayEl) dom.videoOverlayEl.style.display = "none";
+
+  document.body.classList.remove("video-playing");
+  document.body.classList.remove("inset-has-3d");
+  document.body.classList.remove("inset-no-tabs");
+  document.body.classList.remove("inset-view-3d");
+  document.body.classList.remove("inset-view-scheme");
+  document.body.classList.remove("inset-view-video");
+
   galleryEl?.classList.remove("hidden");
   viewerWrapperEl?.classList.remove("visible");
+
   if (statusEl) statusEl.textContent = "";
-  currentId = null;
-  exitInsetMode();
-  controlledMaterials = [];
+
+currentId = null;
+currentMeta = null;
+activeView = "3d";
+setCanvasInteractionEnabled(true);
+
+exitInsetMode();
+threeClearModel();
+
+controlledMaterials = [];
 currentOpacity = 1;
-  sectionMaterials = [];
+sectionMaterials = [];
 }
 
 export function openById(id) {
@@ -304,21 +743,48 @@ export function openById(id) {
     return;
   }
 
-currentId = id;
-enterInsetMode();
+  hardResetInsetRuntime();
+
+  currentId = id;
+  currentMeta = meta;
+  enterInsetMode();
 
 // ✅ новый токен загрузки (всё, что придёт со старым токеном — игнорим)
 const mySeq = ++insetLoadSeq;
 
-// ✅ сразу чистим CAD от предыдущей врезки, чтобы не "мигало" старым
-clearCadOverlay();
-
+if (dom?.schemeOverlayEl) dom.schemeOverlayEl.style.display = "none";
+if (dom?.videoOverlayEl) dom.videoOverlayEl.style.display = "none";
+document.body.classList.remove("video-playing");
 // ✅ показываем viewer
 dom.galleryEl?.classList.add("hidden");
 dom.viewerWrapperEl?.classList.add("visible");
 
 // ✅ подпись
 if (dom.modelLabelEl) dom.modelLabelEl.textContent = meta.name;
+
+// ✅ настраиваем вкладки
+configureViewTabsForInset(meta);
+const startView = chooseStartView(meta);
+const { has3d } = getInsetCapabilities(meta);
+  setInsetViewClass(startView);
+setCanvasInteractionEnabled(startView === "3d");
+
+// ✅ если у врезки нет 3D (нулевая карточка) — модель не грузим
+if (!has3d) {
+  controlledMaterials = [];
+  sectionMaterials = [];
+
+  setInsetBlendState(0, []);
+  setInsetSectionBlendState(0.5, []);
+  setOutlineExcludedMaterials([]);
+  setCadAlpha(0);
+  setSectionEdgesAlpha(0);
+
+  hideLoading();
+  setStatus("");
+  setViewMode(startView);
+  return;
+}
 
 // ✅ загрузка
 showLoading(`Загрузка: ${meta.name}`);
@@ -334,6 +800,9 @@ loadModel(meta.sourceId || meta.id, {
   if (!document.body.classList.contains("inset-mode")) return;
     // ✅ 1) сначала применяем цвета сечений (если они заданы в meta)
     applyInsetColors(root, meta);
+    // ✅ Теперь новая модель уже готова — возвращаем тяжёлый pipeline
+setInsetBlendEnabled(true);
+setOutlineEnabled(true);
 
     // ✅ 2) показываем модель в threeViewer
 threeSetModel(root);
@@ -353,14 +822,34 @@ setCadAlpha(cadAlpha);
     setInsetBlendState(0, controlledMaterials);
     // ✅ собираем материалы сечений (2/3/4) и включаем их статичный микс
 sectionMaterials = [];
-const secNames = Array.isArray(meta.sectionMaterialNames) ? meta.sectionMaterialNames : [];
-for (const n of secNames) {
+let outlineExcludedSectionMaterials = [];
+
+const { primary, all } = getSectionNameSets(meta);
+
+// Основные сечения — для заливки и section-blend
+for (const n of primary) {
   sectionMaterials.push(...collectMaterialsByName(root, n));
 }
-// уникализируем
 sectionMaterials = Array.from(new Set(sectionMaterials));
 
 setInsetSectionBlendState(0.5, sectionMaterials);
+
+// Все сечения — чтобы белый контур не рисовался по ним вообще
+for (const n of all) {
+  outlineExcludedSectionMaterials.push(...collectMaterialsByName(root, n));
+}
+outlineExcludedSectionMaterials = Array.from(new Set(outlineExcludedSectionMaterials));
+
+setOutlineExcludedMaterials(outlineExcludedSectionMaterials);
+
+setSectionEdgesOverlay(
+  root,
+  all,
+  meta.materialColors || {}
+);
+
+const edgeAlpha = Math.min(1, Math.max(0, (1 - currentOpacity) / 0.3));
+setSectionEdgesAlpha(edgeAlpha);
 
     // ✅ 4) применяем текущую прозрачность
     applyOpacityToControlled();
@@ -373,6 +862,7 @@ setInsetSectionBlendState(0.5, sectionMaterials);
     }
 
     hideLoading();
+    setViewMode(startView);
 
   })
 

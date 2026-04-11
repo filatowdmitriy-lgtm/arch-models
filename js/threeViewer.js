@@ -32,6 +32,13 @@ let insetControlledMaterials = [];  // материалы, которые дел
 // ===== Section blend (сечения: статичный mix) =====
 let insetSectionBlendFactor = 0.5;   // 0..1 (фиксированный микс для сечений)
 let insetSectionMaterials = [];      // материалы сечений, которые делаем opaque в одном из проходов
+let outlineExcludedMaterials = [];   // все материалы, которые надо исключить из white outline
+// ===== Simple colored edges for section meshes =====
+let sectionEdgesScene = null;
+let sectionEdgesGroup = null;
+let sectionEdgesMeshes = [];
+let sectionEdgesAlpha = 0;
+let rtSE = null; // render target для цветных контуров сечений
 
 let rtA = null;
 let rtB = null;
@@ -79,6 +86,12 @@ cadScene = new THREE.Scene();
 cadGroup = new THREE.Group();
 cadGroup.name = "cad-overlay";
 cadScene.add(cadGroup);
+// Простые цветные контуры сечений: отдельная сцена,
+// потом подмешиваем в финальный композит ПЕРЕД белым outline
+sectionEdgesScene = new THREE.Scene();
+sectionEdgesGroup = new THREE.Group();
+sectionEdgesGroup.name = "section-edges-overlay";
+sectionEdgesScene.add(sectionEdgesGroup);
 
   camera = new THREE.PerspectiveCamera(
     40,
@@ -158,6 +171,33 @@ export function setModel(root) {
   fitCameraToModel(root);
 }
 
+export function clearModel(options = {}) {
+  const { keepInsetPipeline = false } = options;
+
+  if (!scene) return;
+
+  if (currentModel) {
+    scene.remove(currentModel);
+    currentModel = null;
+  }
+
+  clearOutlines();
+  clearCadOverlay();
+  clearSectionEdgesOverlay();
+
+  setCadAlpha(0);
+  setSectionEdgesAlpha(0);
+
+  setInsetBlendState(0, []);
+  setInsetSectionBlendState(0.5, []);
+  setOutlineExcludedMaterials([]);
+
+  if (!keepInsetPipeline) {
+    setOutlineEnabled(false);
+    setInsetBlendEnabled(false);
+  }
+}
+
 function rebuildOutlinesForModel(root) {
   clearOutlines();
   if (!outlineGroup || !root) return;
@@ -221,13 +261,24 @@ export function resize() {
   camera.updateProjectionMatrix();
 
   renderer.setSize(window.innerWidth, window.innerHeight);
+
   if (cadLineMat) {
-  cadLineMat.resolution.set(
-    renderer.domElement.width,
-    renderer.domElement.height
-  );
-}
-    // чтобы RenderTarget пересоздались под новый размер
+    cadLineMat.resolution.set(
+      renderer.domElement.width,
+      renderer.domElement.height
+    );
+  }
+
+  for (const e of sectionEdgesMeshes) {
+    if (e.material && e.material.resolution) {
+      e.material.resolution.set(
+        renderer.domElement.width,
+        renderer.domElement.height
+      );
+    }
+  }
+
+  // чтобы RenderTarget пересоздались под новый размер
   if (insetBlendEnabled) {
     ensureBlendResources();
   }
@@ -257,6 +308,10 @@ export function setInsetSectionBlendState(factor01, sectionMats) {
   insetSectionMaterials = Array.isArray(sectionMats) ? sectionMats : [];
 }
 
+export function setOutlineExcludedMaterials(materials) {
+  outlineExcludedMaterials = Array.isArray(materials) ? materials : [];
+}
+
 // ===============================
 // CAD overlay API (для врезок)
 // ===============================
@@ -270,6 +325,26 @@ export function setOutlineStyle({ thicknessPx, edgesAngle } = {}) {
   if (typeof edgesAngle === "number") edgesAngleDeg = edgesAngle;
 }
 
+export function setSectionEdgesOverlay(root, sectionMaterialNames = [], materialColors = {}) {
+  buildSectionEdges(root, sectionMaterialNames, materialColors);
+}
+
+export function clearSectionEdgesOverlay() {
+  clearSectionEdges();
+}
+
+export function setSectionEdgesAlpha(alpha) {
+  sectionEdgesAlpha = Math.max(0, Math.min(1, Number(alpha) || 0));
+
+  for (const obj of sectionEdgesMeshes) {
+    if (!obj || !obj.material) continue;
+
+    obj.material.transparent = true;
+    obj.material.opacity = sectionEdgesAlpha;
+    obj.material.needsUpdate = true;
+  }
+}
+
 function clearOutlines() {
   if (!outlineGroup) return;
 
@@ -281,12 +356,171 @@ function clearOutlines() {
   outlineGroup.clear();
 }
 
+function clearSectionEdges() {
+  if (!sectionEdgesGroup) return;
+
+  for (const e of sectionEdgesMeshes) {
+    e.geometry?.dispose?.();
+    e.material?.dispose?.();
+  }
+
+  sectionEdgesMeshes = [];
+  sectionEdgesGroup.clear();
+  sectionEdgesAlpha = 0;
+}
+
+function buildSectionSubGeometryByMaterialName(obj, materialName) {
+  const geom = obj?.geometry;
+  if (!geom) return null;
+
+  const posAttr = geom.getAttribute("position");
+  if (!posAttr) return null;
+
+  const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+
+  const groups =
+    Array.isArray(geom.groups) && geom.groups.length
+      ? geom.groups
+      : [{
+          start: 0,
+          count: geom.index ? geom.index.count : posAttr.count,
+          materialIndex: 0
+        }];
+
+  const pickedVertexIndices = [];
+
+  for (const group of groups) {
+    const mat =
+      materials[group.materialIndex] ||
+      materials[0] ||
+      null;
+
+    if (!mat) continue;
+    if (String(mat.name) !== String(materialName)) continue;
+
+    if (geom.index) {
+      const indexArray = geom.index.array;
+      const end = group.start + group.count;
+
+      for (let i = group.start; i < end; i++) {
+        pickedVertexIndices.push(indexArray[i]);
+      }
+    } else {
+      const end = group.start + group.count;
+
+      for (let i = group.start; i < end; i++) {
+        pickedVertexIndices.push(i);
+      }
+    }
+  }
+
+  if (!pickedVertexIndices.length) return null;
+
+  const outPos = new Float32Array(pickedVertexIndices.length * 3);
+
+  for (let i = 0; i < pickedVertexIndices.length; i++) {
+    const vi = pickedVertexIndices[i];
+    outPos[i * 3 + 0] = posAttr.getX(vi);
+    outPos[i * 3 + 1] = posAttr.getY(vi);
+    outPos[i * 3 + 2] = posAttr.getZ(vi);
+  }
+
+  const outGeom = new THREE.BufferGeometry();
+  outGeom.setAttribute("position", new THREE.BufferAttribute(outPos, 3));
+
+  return outGeom;
+}
+
+function buildSectionEdges(root, sectionMaterialNames = [], materialColors = {}) {
+  clearSectionEdges();
+
+  if (!root || !sectionEdgesGroup) return;
+  if (!Array.isArray(sectionMaterialNames) || !sectionMaterialNames.length) return;
+
+  const pointNameRe = /^[a-z](\d+)?$/;
+
+  root.traverse((obj) => {
+    if (!obj.isMesh) return;
+
+    const nm = String(obj.name || "").trim();
+    if (pointNameRe.test(nm)) return;
+
+    for (const matName of sectionMaterialNames) {
+      const subGeom = buildSectionSubGeometryByMaterialName(obj, matName);
+      if (!subGeom) continue;
+
+      const edgesGeom = new THREE.EdgesGeometry(subGeom, 1);
+      subGeom.dispose();
+
+      const pos = edgesGeom.getAttribute("position");
+      if (!pos || pos.count === 0) {
+        edgesGeom.dispose();
+        continue;
+      }
+
+      const positions = Array.from(pos.array);
+      edgesGeom.dispose();
+
+      const wideGeom = new LineSegmentsGeometry();
+      wideGeom.setPositions(positions);
+
+      const colorValue =
+        (materialColors && materialColors[String(matName)]) ||
+        "#ffffff";
+
+const lineMat = new LineMaterial({
+  color: new THREE.Color(colorValue),
+  linewidth: 2.0,
+  transparent: true,
+  opacity: sectionEdgesAlpha,
+  depthTest: false,
+  depthWrite: false,
+  dashed: false
+});
+
+      lineMat.resolution.set(
+        renderer.domElement.width,
+        renderer.domElement.height
+      );
+
+      const lines = new LineSegments2(wideGeom, lineMat);
+      lines.matrixAutoUpdate = false;
+      lines.frustumCulled = false;
+      lines.renderOrder = 1400;
+
+      lines.matrix.copy(obj.matrixWorld);
+      lines.matrixWorld.copy(obj.matrixWorld);
+
+      lines.onBeforeRender = () => {
+        lines.matrix.copy(obj.matrixWorld);
+        lines.matrixWorld.copy(obj.matrixWorld);
+      };
+
+      sectionEdgesGroup.add(lines);
+      sectionEdgesMeshes.push(lines);
+    }
+  });
+}
+
 export function clearCadOverlay() {
   if (!cadGroup) return;
 
   for (const child of cadGroup.children) {
     child.geometry?.dispose?.();
-    child.material?.dispose?.();
+
+    const mat = child.material;
+
+    if (Array.isArray(mat)) {
+      for (const m of mat) {
+        if (!m) continue;
+        if (m === cadLineMat) continue; // общий CAD-материал НЕ диспозим
+        m.dispose?.();
+      }
+    } else if (mat) {
+      if (mat !== cadLineMat) {
+        mat.dispose?.();
+      }
+    }
   }
 
   cadGroup.clear();
@@ -421,6 +655,16 @@ if (!rtD || rtD.width !== w || rtD.height !== h) {
   rtD?.dispose?.();
   rtD = new THREE.WebGLRenderTarget(w, h, params);
 }
+  if (!rtSE || rtSE.width !== w || rtSE.height !== h) {
+  rtSE?.dispose?.();
+  rtSE = new THREE.WebGLRenderTarget(w, h, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    depthBuffer: false,
+    stencilBuffer: false
+  });
+}
 
   // ===== Normals RT (для контуров) =====
 if (!rtN || rtN.width !== w || rtN.height !== h) {
@@ -461,6 +705,7 @@ uniforms: {
   t10: { value: null }, // body opaque + sec semi
   t01: { value: null }, // body semi + sec opaque
   t11: { value: null }, // body opaque + sec opaque
+  tSE: { value: null }, // цветные контуры сечений
   tN: { value: null },          // normal texture
 tDepth: { value: null },      // depth texture (rtN.depthTexture)
 uTexel: { value: new THREE.Vector2(1 / 1024, 1 / 1024) }, // будет обновляться
@@ -486,6 +731,7 @@ uniform sampler2D t00;
 uniform sampler2D t10;
 uniform sampler2D t01;
 uniform sampler2D t11;
+uniform sampler2D tSE;
 uniform sampler2D tN;
 uniform sampler2D tDepth;
 uniform vec2 uTexel;
@@ -531,6 +777,10 @@ void main() {
   // потом микс по сечениям
   vec4 outC = mix(semiSec, opaSec, s);
   vec3 col = outC.rgb;
+
+  // Сначала подмешиваем цветные простые контуры сечений
+  vec4 secEdge = texture2D(tSE, vUv);
+  col = mix(col, secEdge.rgb, clamp(secEdge.a, 0.0, 1.0));
 
 if (uOutlineOn > 0.5) {
   float ed = edgeDepth(vUv) * uDepthK;
@@ -633,13 +883,31 @@ renderer.setRenderTarget(rtD);
 renderer.clear(true, true, true);
 renderer.render(scene, camera);
 
+// ===== Простые цветные контуры сечений =====
+{
+  const prevClearColor = new THREE.Color();
+  renderer.getClearColor(prevClearColor);
+  const prevClearAlpha = renderer.getClearAlpha();
+
+  renderer.setRenderTarget(rtSE);
+  renderer.setClearColor(0x000000, 0);
+  renderer.clear(true, true, true);
+
+  if (sectionEdgesScene && sectionEdgesGroup && sectionEdgesGroup.children.length) {
+    renderer.render(sectionEdgesScene, camera);
+  }
+
+  renderer.setClearColor(prevClearColor, prevClearAlpha);
+}
+
 // ===== Normals + Depth pass (для контуров) =====
 if (outlineEnabled) {
 
-  // ✅ временно прячем сечения, чтобы их НЕ было в normals-pass (и не было контура по ним)
+  // ✅ временно прячем все сечения, чтобы их НЕ было в normals-pass
+  // и белый контур не появлялся на их пересечениях
   const hiddenSections = [];
-  if (currentModel && Array.isArray(insetSectionMaterials) && insetSectionMaterials.length) {
-    const secSet = new Set(insetSectionMaterials);
+  if (currentModel && Array.isArray(outlineExcludedMaterials) && outlineExcludedMaterials.length) {
+    const secSet = new Set(outlineExcludedMaterials);
 
     currentModel.traverse((obj) => {
       if (!obj.isMesh) return;
@@ -678,7 +946,7 @@ restoreStates(savedSec);
   postQuad.material.uniforms.t10.value = rtB.texture;
   postQuad.material.uniforms.t01.value = rtC.texture;
   postQuad.material.uniforms.t11.value = rtD.texture;
-
+  postQuad.material.uniforms.tSE.value = rtSE ? rtSE.texture : null;
   postQuad.material.uniforms.uBodyMix.value = insetBlendFactor;
   postQuad.material.uniforms.uSecMix.value = insetSectionBlendFactor;
   // ===== Передаём normals и depth в шейдер =====

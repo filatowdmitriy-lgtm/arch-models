@@ -5,11 +5,34 @@
 // models.js сам сможет загрузить source-модели по sourcePath (без правок models.js).
 
 const RAW_INSETS = [
+
+  {
+  id: "inset_0",
+  name: "Общая теория / Введение",
+  desc: "Схемы и видео",
+  preview: "textures/preview/preview4.webp",
+
+video: [
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/vrez/v1.mp4`,
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/vrez/v2.mp4`,
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/vrez/v3.mp4`,
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/vrez/v5.mp4`,
+  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/vrez/v8.mp4`,
+],
+},
+  
 {
   id: "inset_1",
   name: "Куб и конус",
   desc: "Врезка прямой плоскости в тело вращения",
   preview: "textures/1/preview.png",
+  schemes: [
+    "textures/1/S1.jpg",
+    "textures/1/S2.jpg",
+    "textures/1/S3.jpg",
+    "textures/1/S4.jpg",
+    "textures/1/S5.jpg",
+  ],
 
   // путь в защищённом API (после ?path=)
   sourcePath: "models/1.1.gltf",
@@ -17,8 +40,9 @@ const RAW_INSETS = [
   // материал тела (управляется ползунком)
   opacityMaterialName: "1",
 
-  // материалы-сечения
-  sectionMaterialNames: ["2", "3", "4"],
+// материалы-сечения
+primarySectionMaterialNames: ["2", "3"],
+auxSectionMaterialNames: ["4"],
 
   // цвета сечений
   materialColors: {
@@ -42,6 +66,13 @@ cad: {
   name: "Горизонтальная треугольная призма и конус",
   desc: "Врезка наклонной плоскости в тело вращения",
     preview: "textures/2/preview.png",
+  schemes: [
+    "textures/2/S1.jpg",
+    "textures/2/S2.jpg",
+    "textures/2/S3.jpg",
+    "textures/2/S4.jpg",
+    "textures/2/S5.jpg",
+ ],
 
   // путь в защищённом API (после ?path=)
   sourcePath: "models/2.3.gltf",
@@ -49,8 +80,10 @@ cad: {
   // материал тела (управляется ползунком)
   opacityMaterialName: "1",
 
-  // материалы-сечения
-  sectionMaterialNames: ["2", "3", "4"],
+// материалы-сечения
+primarySectionMaterialNames: ["2", "3"],
+auxSectionMaterialNames: ["4"],
+
 
   // цвета сечений
   materialColors: {
@@ -74,6 +107,13 @@ cad: {
   name: "Пирамида и горизонтальная треугольная призма",
   desc: "Врезка двух наклонных плоскостей",
       preview: "textures/3/preview.png",
+        schemes: [
+          "textures/3/SS1.jpg",
+          "textures/3/SS2.jpg",
+          "textures/3/SS3.jpg",
+          "textures/3/SS4.jpg",
+          "textures/3/SS5.jpg",
+ ],
 
   // путь в защищённом API (после ?path=)
   sourcePath: "models/3.gltf",
@@ -81,8 +121,10 @@ cad: {
   // материал тела (управляется ползунком)
   opacityMaterialName: "1",
 
-  // материалы-сечения
-  sectionMaterialNames: ["2", "3", "4"],
+// материалы-сечения
+primarySectionMaterialNames: ["2", "3"],
+auxSectionMaterialNames: ["4"],
+
 
   // цвета сечений
   materialColors: {
@@ -112,8 +154,10 @@ cad: {
   // материал тела (управляется ползунком)
   opacityMaterialName: "1",
 
-  // материалы-сечения
-  sectionMaterialNames: ["2", "3"],
+// материалы-сечения
+primarySectionMaterialNames: ["3"],
+auxSectionMaterialNames: ["2"],
+
 
   // цвета сечений
   materialColors: {
@@ -135,6 +179,13 @@ cad: {
   name: "Горизонтальный цилиндр и пирамида",
   desc: "Врезка наклонной плоскости в тело вращения",
   preview: "textures/5/preview.png",
+      schemes: [
+    "textures/5/S1.jpg",
+    "textures/5/S2.jpg",
+    "textures/5/S3.jpg",
+    "textures/5/S4.jpg",
+    "textures/5/S5.jpg",
+ ],
 
   // путь в защищённом API (после ?path=)
   sourcePath: "models/5.1.gltf",
@@ -142,8 +193,10 @@ cad: {
   // материал тела (управляется ползунком)
   opacityMaterialName: "1",
 
-  // материалы-сечения
-  sectionMaterialNames: ["2", "3", "4"],
+// материалы-сечения
+primarySectionMaterialNames: ["3"],
+auxSectionMaterialNames: ["2", "4"],
+
 
   // цвета сечений
   materialColors: {
@@ -174,8 +227,10 @@ cad: {
   // материал тела (управляется ползунком)
   opacityMaterialName: "1",
 
-  // материалы-сечения
-  sectionMaterialNames: ["2", "3", "4", "5"],
+// материалы-сечения
+primarySectionMaterialNames: ["2", "3"],
+auxSectionMaterialNames: ["4", "5"],
+
 
   // цвета сечений
   materialColors: {
@@ -203,15 +258,24 @@ cad: {
   name: "Горизонтальный цилиндр и треугольная призма",
   desc: "Врезка наклонной плоскости в тело вращения",
   preview: "textures/7/preview.png",
+      schemes: [
+    "textures/7/S1.jpg",
+    "textures/7/S2.jpg",
+    "textures/7/S3.jpg",
+    "textures/7/S4.jpg",
+    "textures/7/S5.jpg",
+ ],
 
   // путь в защищённом API (после ?path=)
-  sourcePath: "models/7.gltf",
+  sourcePath: "models/7.1.gltf",
 
   // материал тела (управляется ползунком)
   opacityMaterialName: "1",
 
-  // материалы-сечения
-  sectionMaterialNames: ["2", "3", "4"],
+// материалы-сечения
+primarySectionMaterialNames: ["2", "3"],
+auxSectionMaterialNames: ["4"],
+
 
   // цвета сечений
   materialColors: {
@@ -241,8 +305,10 @@ cad: {
   // материал тела (управляется ползунком)
   opacityMaterialName: "1",
 
-  // материалы-сечения
-  sectionMaterialNames: ["2", "3", "4"],
+// материалы-сечения
+primarySectionMaterialNames: ["3"],
+auxSectionMaterialNames: ["2", "4"],
+
 
   // цвета сечений
   materialColors: {
@@ -265,6 +331,13 @@ cad: {
   name: "Вертикальный цилинлр и треугольная призма",
   desc: "Врезка наклонной плоскости в тело вращения",
   preview: "textures/9/preview.png",
+      schemes: [
+    "textures/9/S1.jpg",
+    "textures/9/S2.jpg",
+    "textures/9/S3.jpg",
+    "textures/9/S4.jpg",
+    "textures/9/S5.jpg",
+ ],
 
   // путь в защищённом API (после ?path=)
   sourcePath: "models/9.gltf",
@@ -272,8 +345,10 @@ cad: {
   // материал тела (управляется ползунком)
   opacityMaterialName: "1",
 
-  // материалы-сечения
-  sectionMaterialNames: ["2", "3", "4"],
+// материалы-сечения
+primarySectionMaterialNames: ["3"],
+auxSectionMaterialNames: ["2", "4"],
+
 
   // цвета сечений
   materialColors: {
@@ -294,7 +369,7 @@ cad: {
     {
   id: "inset_10",
   name: "Горизонтальный цилиндр и шестигранник",
-  desc: "Врезка наклонных плоскостей в тело вращения",
+  desc: "Врезка наклонной плоскости в тело вращения",
   preview: "textures/10/preview.png",
 
   // путь в защищённом API (после ?path=)
@@ -303,8 +378,9 @@ cad: {
   // материал тела (управляется ползунком)
   opacityMaterialName: "1",
 
-  // материалы-сечения
-  sectionMaterialNames: ["2", "3", "4", "5"],
+// материалы-сечения
+primarySectionMaterialNames: ["2", "3"],
+auxSectionMaterialNames: ["4", "5"],
 
   // цвета сечений
   materialColors: {
@@ -337,8 +413,9 @@ cad: {
   // материал тела (управляется ползунком)
   opacityMaterialName: "1",
 
-  // материалы-сечения
-  sectionMaterialNames: ["2", "3", "4", "5", "6"],
+// материалы-сечения
+primarySectionMaterialNames: ["2", "3"],
+auxSectionMaterialNames: ["4", "5", "6"],
 
   // цвета сечений
   materialColors: {
@@ -357,6 +434,102 @@ cad: {
     ["c", "d"],
     ["e", "f"],
     ["g", "h"]
+  ]
+}
+},
+    {
+  id: "inset_12",
+  name: "Пирамида и горизонтальный шестигранник",
+  desc: "Врезка наклонных плоскостей",
+  preview: "textures/12/preview.png",
+
+  // путь в защищённом API (после ?path=)
+  sourcePath: "models/12.gltf",
+
+  // материал тела (управляется ползунком)
+  opacityMaterialName: "1",
+
+// материалы-сечения
+primarySectionMaterialNames: ["3"],
+auxSectionMaterialNames: ["2", "4"],
+
+
+  // цвета сечений
+  materialColors: {
+    "2": "#d929c1", // круг
+    "3": "#1c58e5", // эллипс
+    "4": "#ddf406" // вспомогательное
+  },
+
+  // ===== CAD-обвязка =====
+cad: {
+  fromNodes: true,
+  lines: [
+    ["a", "b"],
+    ["c", "d"]
+  ]
+}
+},
+  {
+  id: "inset_13",
+  name: "Вертикальная пирамида и треугольная призма",
+  desc: "Врезка наклонных плоскостей",
+  preview: "textures/13/preview.png",
+
+  // путь в защищённом API (после ?path=)
+  sourcePath: "models/13.gltf",
+
+  // материал тела (управляется ползунком)
+  opacityMaterialName: "1",
+
+// материалы-сечения
+primarySectionMaterialNames: ["2", "3"],
+
+  // цвета сечений
+  materialColors: {
+    "2": "#d929c1", // круг
+    "3": "#1c58e5", // эллипс
+  },
+
+  // ===== CAD-обвязка =====
+cad: {
+  fromNodes: true,
+  lines: [
+    ["a", "b"],
+    ["c", "d"]
+  ]
+}
+},
+    {
+  id: "inset_14",
+  name: "Вертикальная треугольная призма и конус",
+  desc: "Врезка наклонной плоскости в тело вращения",
+  preview: "textures/14/preview.png",
+
+  // путь в защищённом API (после ?path=)
+  sourcePath: "models/14.gltf",
+
+  // материал тела (управляется ползунком)
+  opacityMaterialName: "1",
+
+// материалы-сечения
+primarySectionMaterialNames: ["2", "5"],
+auxSectionMaterialNames: ["3", "4"],
+
+        // цвета сечений
+  materialColors: {
+    "2": "#1c58e5", // порабола
+    "3": "#ddf406", // вспомогательное
+    "4": "#12d6c3", // вспомогательное
+    "5": "#d929c1" // круг
+  },
+
+  // ===== CAD-обвязка =====
+cad: {
+  fromNodes: true,
+  lines: [
+    ["a", "b"],
+    ["c", "d"]
   ]
 }
 },

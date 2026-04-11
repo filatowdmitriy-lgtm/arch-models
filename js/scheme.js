@@ -29,9 +29,15 @@ let preloadedScheme = {
 
 let overlay = null;
 let img = null;
+let boundOverlay = null;
+let boundImg = null;
+let prevBtn = null;
+let nextBtn = null;
+let navBound = false;
 
 let images = [];  // массив URL схем
 let activeIndex = 0;
+let loadVersion = 0;
 
 
 // Масштаб
@@ -66,7 +72,8 @@ let uiHidden = false;
 let uiShowTimer = null;
 
 // Callback в viewer.js
-let onUiVisibilityChange = null;
+let onUiVisibilityArch = null;
+let onUiVisibilityInset = null;
 
 // Текущий режим вкладки: активирована схема или нет
 let active = false;
@@ -76,10 +83,25 @@ let active = false;
    ИНИЦИАЛИЗАЦИЯ
    ============================================================ */
 
-export function initScheme({ overlayEl, imgEl, onUiVisibility }) {
+export function initScheme({
+  overlayEl,
+  imgEl,
+  onUiVisibility,
+  context = "arch",
+  prevBtnEl = null,
+  nextBtnEl = null
+}) {
   overlay = overlayEl;
   img = imgEl;
-  onUiVisibilityChange = onUiVisibility || null;
+
+  if (context === "inset") {
+    onUiVisibilityInset = onUiVisibility || null;
+  } else {
+    onUiVisibilityArch = onUiVisibility || null;
+  }
+
+  if (prevBtnEl) prevBtn = prevBtnEl;
+  if (nextBtnEl) nextBtn = nextBtnEl;
 
   if (!overlay || !img) {
     console.error("scheme.js: overlay/img not provided");
@@ -92,14 +114,40 @@ export function initScheme({ overlayEl, imgEl, onUiVisibility }) {
   img.draggable = false;
 
   // На загрузку картинки — сброс трансформа
-  img.addEventListener("load", () => {
-    if (!active) return;
-    resetTransform();
-  });
+  if (boundImg !== img) {
+    img.addEventListener("load", () => {
+      if (!active) return;
+      resetTransform();
+      updateSchemeNavButtons();
+    });
+    boundImg = img;
+  }
 
-  attachEvents();
+  // События жестов/кликов вешаем только один раз на тот же overlay
+  if (boundOverlay !== overlay) {
+    attachEvents();
+    boundOverlay = overlay;
+  }
+
+  // Стрелки схем вешаем один раз
+  if (!navBound && prevBtn && nextBtn) {
+    prevBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showPrevScheme();
+    });
+
+    nextBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showNextScheme();
+    });
+
+    navBound = true;
+  }
+
+  updateSchemeNavButtons();
 }
-
 /* ============================================================
    УСТАНОВКА СПИСКА ИЗОБРАЖЕНИЙ (m.schemes)
    ============================================================ */
@@ -107,42 +155,61 @@ export function initScheme({ overlayEl, imgEl, onUiVisibility }) {
 export async function setSchemeImages(urlList) {
   images = Array.isArray(urlList) ? urlList.slice() : [];
   activeIndex = 0;
+  loadVersion += 1;
+  const version = loadVersion;
+  updateSchemeNavButtons();
 
   if (!images.length || !img) return;
 
-  await loadSchemeAtIndex(0);
+  await loadSchemeAtIndex(0, version);
 }
-async function loadSchemeAtIndex(index) {
+async function loadSchemeAtIndex(index, version = loadVersion) {
   if (!images[index] || !img) return;
 
-  // ОСВОБОЖДАЕМ ПРЕДЫДУЩУЮ СХЕМУ
-  if (currentSchemeBlobUrl) {
-    URL.revokeObjectURL(currentSchemeBlobUrl);
-    currentSchemeBlobUrl = null;
-  }
-
   try {
+    let nextBlobUrl = null;
+    let reusedPreload = false;
+
     // если схема уже предзагружена — используем её
-if (preloadedScheme.index === index && preloadedScheme.blobUrl) {
-  currentSchemeBlobUrl = preloadedScheme.blobUrl;
-  preloadedScheme.index = null;
-  preloadedScheme.blobUrl = null;
-} else {
-  const blob = await cachedFetch(images[index]);
-  currentSchemeBlobUrl = URL.createObjectURL(blob);
-}
+    if (preloadedScheme.index === index && preloadedScheme.blobUrl) {
+      nextBlobUrl = preloadedScheme.blobUrl;
+      preloadedScheme.index = null;
+      preloadedScheme.blobUrl = null;
+      reusedPreload = true;
+    } else {
+      const blob = await cachedFetch(images[index]);
 
-activeIndex = index;
-img.src = currentSchemeBlobUrl;
+      // пока грузили — режим/набор картинок уже мог поменяться
+      if (version !== loadVersion) return;
 
-// preload следующей схемы
-preloadScheme((index + 1) % images.length);
+      nextBlobUrl = URL.createObjectURL(blob);
+    }
+
+    if (version !== loadVersion) {
+      if (nextBlobUrl && !reusedPreload) {
+        URL.revokeObjectURL(nextBlobUrl);
+      }
+      return;
+    }
+
+    // освобождаем только когда новая картинка уже готова
+    if (currentSchemeBlobUrl) {
+      URL.revokeObjectURL(currentSchemeBlobUrl);
+      currentSchemeBlobUrl = null;
+    }
+
+    currentSchemeBlobUrl = nextBlobUrl;
+    activeIndex = index;
+    img.src = currentSchemeBlobUrl;
+
+    // preload следующей схемы
+    preloadScheme((index + 1) % images.length, version);
   } catch (err) {
     console.error("Scheme load failed:", images[index], err);
   }
 }
 
-async function preloadScheme(index) {
+async function preloadScheme(index, version = loadVersion) {
   if (!images[index]) return;
   if (preloadedScheme.index === index) return;
 
@@ -154,7 +221,15 @@ async function preloadScheme(index) {
 
   try {
     const blob = await cachedFetch(images[index]);
+
+    if (version !== loadVersion) return;
+
     const blobUrl = URL.createObjectURL(blob);
+
+    if (version !== loadVersion) {
+      URL.revokeObjectURL(blobUrl);
+      return;
+    }
 
     preloadedScheme.index = index;
     preloadedScheme.blobUrl = blobUrl;
@@ -170,22 +245,53 @@ async function preloadScheme(index) {
 
 export function activateScheme() {
   active = true;
+  swipeFollowX = 0;
+  swipeAnimating = false;
+  touchMode = null;
+  isDragging = false;
+
+  if (img) {
+    img.style.transition = "none";
+  }
+
   resetTransform();
+  updateSchemeNavButtons();
+}
+
+export function resetSchemeView() {
+  if (!overlay || !img) return;
+  if (!img.complete) return;
+
+  active = true;
+  resetTransform();
+  updateSchemeNavButtons();
 }
 
 export function deactivateScheme() {
   active = false;
+  loadVersion += 1;
+
+  swipeFollowX = 0;
+  swipeAnimating = false;
+  touchMode = null;
+  isDragging = false;
+
+  if (img) {
+    img.style.transition = "none";
+  }
+
   hideUi(false);
+  updateSchemeNavButtons();
 
   if (currentSchemeBlobUrl) {
     URL.revokeObjectURL(currentSchemeBlobUrl);
     currentSchemeBlobUrl = null;
   }
   if (preloadedScheme.blobUrl) {
-  URL.revokeObjectURL(preloadedScheme.blobUrl);
-  preloadedScheme.blobUrl = null;
-  preloadedScheme.index = null;
-}
+    URL.revokeObjectURL(preloadedScheme.blobUrl);
+    preloadedScheme.blobUrl = null;
+    preloadedScheme.index = null;
+  }
 }
 
 
@@ -327,9 +433,11 @@ perform();
 function hideUi(hidden) {
   uiHidden = hidden;
 
-  if (onUiVisibilityChange) {
-    onUiVisibilityChange(hidden);
-  }
+  const cb = document.body.classList.contains("inset-mode")
+    ? onUiVisibilityInset
+    : onUiVisibilityArch;
+
+  if (cb) cb(hidden);
 }
 
 function showUiTemporarily() {
@@ -350,7 +458,26 @@ function updateUiAutoHide() {
 /* ============================================================
    SWIPE BETWEEN IMAGES
    ============================================================ */
+function updateSchemeNavButtons() {
+  const visible = active && images.length > 1;
 
+  if (prevBtn) prevBtn.style.display = visible ? "flex" : "none";
+  if (nextBtn) nextBtn.style.display = visible ? "flex" : "none";
+}
+
+function showPrevScheme() {
+  if (!images.length || images.length <= 1) return;
+  activeIndex = (activeIndex - 1 + images.length) % images.length;
+  const version = ++loadVersion;
+  loadSchemeAtIndex(activeIndex, version);
+}
+
+function showNextScheme() {
+  if (!images.length || images.length <= 1) return;
+  activeIndex = (activeIndex + 1) % images.length;
+  const version = ++loadVersion;
+  loadSchemeAtIndex(activeIndex, version);
+}
 function handleSwipe() {
   if (images.length <= 1) return;
   if (userScale !== 1) return; // свайпы только на fit-масштабе
@@ -363,9 +490,8 @@ function handleSwipe() {
   const dir = dx < 0 ? 1 : -1;
   activeIndex = (activeIndex + dir + images.length) % images.length;
 
- loadSchemeAtIndex(activeIndex);
-
-
+  const version = ++loadVersion;
+  loadSchemeAtIndex(activeIndex, version);
 }
 
 
@@ -508,18 +634,27 @@ if (touchMode === "swipe" && e.touches.length === 1) {
           swipeFollowX = dx < 0 ? -rect.width : rect.width;
           applyTransform();
 
-          const onDone = () => {
-            img.removeEventListener("transitionend", onDone);
+const swipeVersion = loadVersion;
 
-            activeIndex = (activeIndex + dir + images.length) % images.length;
-           loadSchemeAtIndex(activeIndex);
+const onDone = () => {
+  img.removeEventListener("transitionend", onDone);
 
+  if (!active || swipeVersion !== loadVersion) {
+    swipeFollowX = 0;
+    swipeAnimating = false;
+    img.style.transition = "none";
+    applyTransform();
+    return;
+  }
 
+  activeIndex = (activeIndex + dir + images.length) % images.length;
+  const version = ++loadVersion;
+  loadSchemeAtIndex(activeIndex, version);
 
-            swipeFollowX = 0;
-            swipeAnimating = false;
-            img.style.transition = "none";
-          };
+  swipeFollowX = 0;
+  swipeAnimating = false;
+  img.style.transition = "none";
+};
 
           img.addEventListener("transitionend", onDone);
         } else {
@@ -529,12 +664,23 @@ if (touchMode === "swipe" && e.touches.length === 1) {
           swipeFollowX = 0;
           applyTransform();
 
-          const onBack = () => {
-            img.removeEventListener("transitionend", onBack);
-            swipeAnimating = false;
-            img.style.transition = "none";
-            applyTransform();
-          };
+const backVersion = loadVersion;
+
+const onBack = () => {
+  img.removeEventListener("transitionend", onBack);
+
+  if (!active || backVersion !== loadVersion) {
+    swipeFollowX = 0;
+    swipeAnimating = false;
+    img.style.transition = "none";
+    applyTransform();
+    return;
+  }
+
+  swipeAnimating = false;
+  img.style.transition = "none";
+  applyTransform();
+};
           img.addEventListener("transitionend", onBack);
         }
       } else {
