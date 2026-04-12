@@ -80,20 +80,16 @@ function checkAccess() {
   const tg = window.Telegram?.WebApp;
 
   // Запуск НE в Telegram → не пускаем
-  if (!tg || !tg.initDataUnsafe) {
-    showLockScreen("Доступ ограничен
-Мини-приложение работает только в официальных клиентах Telegram и при запуске из закрытой группы, где у вас есть доступ.
-Откройте его через официальное приложение Telegram или официальную веб-версию Telegram.");
-    return false;
-  }
+if (!tg || !tg.initDataUnsafe) {
+  showLockScreen(`Мини-приложение работает только в официальных клиентах Telegram и при запуске из закрытой группы, где у вас есть доступ.<br><br>Откройте его через официальное приложение Telegram или официальную веб-версию Telegram.`);
+  return false;
+}
 
   const ci = tg.initDataUnsafe.chat_instance;
 
   // Запуск в Telegram, но не из нашей группы
-  if (!ci || !ALLOWED_CHAT_INSTANCES.includes(ci)) {
-  showLockScreen("Доступ ограничен
-Мини-приложение работает только в официальных клиентах Telegram и при запуске из закрытой группы, где у вас есть доступ.
-Откройте его через официальное приложение Telegram или официальную веб-версию Telegram.");
+if (!ci || !ALLOWED_CHAT_INSTANCES.includes(ci)) {
+  showLockScreen(`Мини-приложение работает только в официальных клиентах Telegram и при запуске из закрытой группы, где у вас есть доступ.<br><br>Откройте его через официальное приложение Telegram или официальную веб-версию Telegram.`);
   return false;
 }
 
