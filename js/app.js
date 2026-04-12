@@ -22,7 +22,7 @@ const MAIN_MENU = [
   {
     id: "section_insets",
     name: "Врезки",
-    desc: "3D врезок",
+    desc: "3D + Построение + Видео",
     preview: "textures/preview/preview2.png",
     thumbLetter: "В"
   }
