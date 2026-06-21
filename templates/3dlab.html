@@ -1,0 +1,1281 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>КОД архитектора</title>
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+    body {
+      margin: 0;
+      background: #050506;
+      color: #f5f5f5;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      overflow: hidden;
+    }
+      :root {
+  --viewer-toolbar-height: 120px;
+}
+
+@media (max-width: 768px) {
+  :root {
+    --viewer-toolbar-height: 140px;
+  }
+}
+
+
+    .app-root {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ---------- TOP BAR --------- */
+.app-header {
+  padding: 10px 16px;
+  min-height: 82px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  background: #050506;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  z-index: 20;
+  flex-shrink: 0;
+  position: relative;
+}
+
+    .app-title {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #bbbbbb;
+    }
+
+    .app-subtitle {
+      font-size: 11px;
+      color: #666;
+      margin-top: 2px;
+    }
+
+    /* ---------- MAIN LAYOUT --------- */
+    .app-main {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+    }
+
+    /* ---------- ГАЛЕРЕЯ ---------- */
+.gallery {
+  position: absolute;
+  inset: 0;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  background: radial-gradient(ellipse at top, #14141a 0%, #050506 55%);
+  z-index: 15;
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.3s ease;
+  align-content: flex-start;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 2 колонки */
+@media (min-width: 600px) {
+  .gallery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 3 колонки */
+@media (min-width: 900px) {
+  .gallery {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* 4 колонки */
+@media (min-width: 1200px) {
+  .gallery {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* 5 колонок максимум */
+@media (min-width: 1500px) {
+  .gallery {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 599px) {
+  .gallery.locations-gallery {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+}      
+
+    .gallery.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .model-card {
+      background: linear-gradient(145deg, #181820, #101018);
+      border-radius: 14px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      cursor: pointer;
+      box-shadow: 0 14px 35px rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+      height: auto;
+    }
+
+    .model-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.7);
+      border-color: rgba(255, 255, 255, 0.16);
+    }
+
+.model-card-base {
+  position: relative;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(82, 62, 132, 0.98) 0%,
+      rgba(46, 40, 78, 0.98) 52%,
+      rgba(28, 30, 48, 0.99) 100%
+    );
+
+  border-color: rgba(185, 150, 255, 0.42);
+
+  box-shadow:
+    0 0 0 1px rgba(165, 125, 255, 0.10),
+    0 14px 42px rgba(88, 52, 165, 0.34),
+    0 0 28px rgba(120, 70, 255, 0.12);
+}
+
+.model-card-base .model-thumb {
+  position: relative;
+  overflow: hidden;
+}
+
+.model-card-base .model-thumb::after {
+  content: "";
+
+  position: absolute;
+  inset: 0;
+
+  pointer-events: none;
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(155, 105, 255, 0.32) 0%,
+      rgba(105, 65, 220, 0.20) 40%,
+      rgba(0, 0, 0, 0.04) 100%
+    );
+}
+
+    .model-thumb {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      border-radius: 10px;
+      background: radial-gradient(circle at 30% 0%, #2c2c38 0%, #14141f 35%, #050506 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.2);
+      font-size: 40px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+.model-caption {
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.12;
+      color: #f3f3f3;
+    }
+
+    .model-desc {
+      font-size: 13px;
+      color: #a4a4aa;
+      line-height: 1.3;
+    }
+
+    /* ---------- VIEWER AREA ---------- */
+    .viewer-wrapper {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+      z-index: 10;
+    }
+
+    .viewer-wrapper.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* ---------- TOOLBAR + TABS --------- */
+
+.viewer-toolbar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: auto;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.viewer-toolbar-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.viewer-model-row {
+  justify-content: center;
+}
+
+.viewer-model-row {
+  margin-bottom: -2px;
+}
+
+.viewer-tabs-row {
+  justify-content: center;
+}
+
+.model-label {
+  font-size: 13px;
+  color: #b7b7c0;
+  max-width: 320px;
+  text-align: center;
+}
+
+/* Верхний главный контрол — единый segmented */
+.viewer-tabs {
+  --seg-x: 0px;
+  --seg-w: 0px;
+
+  position: relative;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(96px, 1fr);
+  align-items: center;
+  gap: 0;
+
+  width: auto;
+  max-width: min(92vw, 720px);
+  margin: 0 auto;
+  padding: 4px;
+
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    0 10px 30px rgba(0,0,0,0.24);
+
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.legacy-tabs-row {
+  display: none !important;
+}
+
+.viewer-tabs.universal-subblocks::before {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.97),
+    rgba(255,140,220,0.92)
+  ) !important;
+
+  box-shadow:
+    0 6px 14px rgba(255,120,220,0.18),
+    inset 0 1px 0 rgba(255,255,255,0.42);
+}
+
+.viewer-tabs.universal-subblocks {
+  width: max-content !important;
+  max-width: min(72vw, 520px) !important;
+  grid-auto-columns: max-content !important;
+  padding: 3px;
+  background: rgba(0,0,0,0.34);
+  border-color: rgba(255,255,255,0.06);
+}
+
+.viewer-tabs.universal-subblocks .tab-btn {
+  min-width: 78px !important;
+  height: 36px;
+  padding: 0 14px !important;
+  font-size: 12px;
+}
+
+.viewer-tabs::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  height: calc(100% - 8px);
+  width: var(--seg-w);
+  transform: translateX(var(--seg-x));
+  border-radius: 999px;
+
+  background: linear-gradient(90deg, rgba(255,255,255,0.97), rgba(140,140,255,0.92));
+  box-shadow:
+    0 6px 14px rgba(125,125,255,0.14),
+    inset 0 1px 0 rgba(255,255,255,0.42);
+
+  transition:
+    transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.28s ease;
+
+  z-index: 0;
+  pointer-events: none;
+}
+
+.tab-btn {
+  position: relative;
+  z-index: 1;
+
+  min-width: 96px;
+  height: 42px;
+  padding: 0 18px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 999px;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  text-align: center;
+
+  color: rgba(255,255,255,0.84);
+  opacity: 1;
+
+  transition:
+    color 0.22s ease,
+    opacity 0.22s ease,
+    transform 0.18s ease;
+}
+
+.tab-btn:hover {
+  color: rgba(255,255,255,0.96);
+}
+
+.tab-btn:active {
+  transform: scale(0.985);
+}
+
+.tab-btn.active {
+  background: transparent !important;
+  color: #050506;
+}
+
+.tab-btn.disabled {
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+@media (max-width: 768px) {
+  .viewer-tabs {
+    max-width: calc(100vw - 20px);
+    grid-auto-columns: minmax(84px, 1fr);
+  }
+
+  .tab-btn {
+    min-width: 84px;
+    height: 42px;
+    padding: 0 14px;
+    font-size: 13px;
+  }
+}
+
+/* Старую верхнюю nav-строку скрываем, она больше не нужна */
+.viewer-nav-row {
+  display: none !important;
+}
+
+/* Нижняя компактная навигация */
+.viewer-bottom-nav {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 31;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: auto;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.viewer-bottom-nav.ui-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(8px);
+}
+
+.viewer-bottom-nav-btn {
+  min-width: 44px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #f5f5f5;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(4px);
+  font-size: 13px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.viewer-bottom-nav-btn.arrow {
+  width: 40px;
+  padding: 0;
+  font-size: 18px;
+}
+
+@media (max-width: 768px) {
+  .viewer-toolbar {
+    gap: 8px;
+  }
+
+  .viewer-tabs {
+    max-width: none;
+  }
+
+  .tab-btn {
+    font-size: 12px;
+    padding: 8px 6px;
+  }
+
+  .viewer-bottom-nav {
+    bottom: 14px;
+    gap: 8px;
+  }
+
+  .viewer-bottom-nav-btn {
+    height: 38px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .viewer-bottom-nav-btn.arrow {
+    width: 38px;
+    font-size: 17px;
+  }
+}
+.video-nav-panel {
+  display: none;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  box-sizing: border-box;
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+}
+
+.video-nav-left,
+.video-nav-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.video-nav-btn {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.6);
+  color: #f5f5f5;
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.03),
+    0 8px 20px rgba(0,0,0,0.2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  line-height: 1;
+  font-family: inherit;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease,
+    opacity 0.16s ease;
+}
+
+.video-nav-btn:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.video-nav-btn:active {
+  transform: scale(0.985);
+}
+
+.video-nav-btn.icon {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.video-nav-btn.back {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.video-nav-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  flex: 0 0 auto;
+}
+
+.video-nav-btn.back svg {
+  width: 17px;
+  height: 17px;
+}
+
+
+@media (max-width: 768px) {
+  .video-nav-panel {
+    gap: 10px;
+  }
+
+  .video-nav-left,
+  .video-nav-right {
+    gap: 10px;
+  }
+
+  .video-nav-btn.icon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .video-nav-btn.back {
+    height: 42px;
+    padding: 0 14px;
+    font-size: 13px;
+  }
+
+  .video-nav-btn svg {
+    width: 17px;
+    height: 17px;
+  }
+}
+    .btn {
+      background: rgba(0, 0, 0, 0.6);
+      color: #f5f5f5;
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 13px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      cursor: pointer;
+      user-select: none;
+      backdrop-filter: blur(4px);
+      white-space: nowrap;
+      line-height: 1.2;
+      font-family: inherit;
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+    }
+
+
+    .tab-btn.disabled {
+      opacity: 0.25;
+      pointer-events: none;
+    }
+
+    @media (max-width: 768px) {
+      .viewer-nav-row {
+        justify-content: space-between;
+      }
+
+      .nav-btn {
+        flex: 1 1 calc(33.33% - 6px);
+        text-align: center;
+      }
+
+      .model-label {
+        max-width: none;
+      }
+    }
+
+    .ui-hidden {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-8px);
+    }
+
+    .viewer-main {
+      position: absolute;
+      inset: 0;
+      touch-action: none;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+
+    /* Оверлеи схемы и видео */
+    .alt-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      background: radial-gradient(circle at top, #050506 0%, #020203 60%);
+      z-index: 25;
+      touch-action: none;
+    }
+
+    #schemeOverlay img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      max-width: none;
+      max-height: none;
+      transform-origin: 0 0;
+      touch-action: none;
+      user-select: none;
+      pointer-events: auto;
+      will-change: transform;
+      display: block;
+    }
+
+    #schemeOverlay {
+      z-index: 20 !important;
+      pointer-events: auto;
+    }
+
+      .scheme-nav-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 26;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  backdrop-filter: blur(4px);
+}
+
+.scheme-nav-btn:active {
+  transform: translateY(-50%) scale(0.98);
+}
+
+.scheme-nav-btn.prev {
+  left: 12px;
+}
+
+.scheme-nav-btn.next {
+  right: 12px;
+}
+
+    .alt-overlay video {
+      max-width: 100%;
+      max-height: 100%;
+      border-radius: 10px;
+      background: #050506;
+    }
+
+    /* ---------- LOADING OVERLAY ---------- */
+    #loading {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      background: radial-gradient(circle at top, rgba(0,0,0,0.85), rgba(0,0,0,0.96));
+      z-index: 40;
+    }
+
+    .loader-ring {
+      width: 48px;
+      height: 48px;
+      border-radius: 999px;
+      border: 3px solid rgba(255, 255, 255, 0.08);
+      border-top-color: #ffffff;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    #loadingText {
+      margin-top: 12px;
+      font-size: 13px;
+      color: #e0e0e0;
+    }
+
+    .loading-bar {
+      margin-top: 10px;
+      width: 140px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .loading-bar-inner {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #ffffff, #8888ff);
+      border-radius: inherit;
+      transition: width 0.15s ease;
+    }
+
+    /* ---------- STATUS ---------- */
+    #status {
+      position: absolute;
+      left: 12px;
+      bottom: 10px;
+      font-size: 11px;
+      color: #7f7f86;
+      z-index: 50;
+      opacity: 0.9;
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+
+/* ---------- WATERMARK ---------- */
+.watermark {
+  position: absolute;
+  inset: 0;
+  z-index: 29; /* поверх canvas / схем / видео */
+  pointer-events: none;
+  opacity: 0.2;
+  mix-blend-mode: difference;
+  display: none;
+}
+
+.watermark span {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  line-height: 120px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: #ffffff;
+  letter-spacing: 0.04em;
+  user-select: none;
+  white-space: nowrap;
+  transform: rotate(-45deg);
+}
+
+/* ===== VIDEO PLAY MODE ===== */
+body.video-playing .app-header,
+body.video-player-open .app-header {
+  display: none;
+}
+
+      /* скрываем навигацию моделей в режиме видео */
+body.video-playing .viewer-nav-row {
+  display: none;
+}
+
+
+body.video-playing .viewer-wrapper {
+  inset: 0;
+}
+
+body.video-playing .viewer-bottom-nav,
+body.video-player-open .viewer-bottom-nav {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(8px);
+}
+
+/* ===== VIDEO LIST (cards) ===== */ /* ADDED */
+      
+#videoOverlay {
+  position: absolute;
+  inset: 0;
+  padding-top: var(--viewer-toolbar-height);
+
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+
+  touch-action: pan-y;
+}
+
+.video-list {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  padding: 16px;
+  align-content: flex-start;
+}
+
+/* 2 */
+@media (min-width: 600px) {
+  .video-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 3 */
+@media (min-width: 900px) {
+  .video-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* 4 */
+@media (min-width: 1200px) {
+  .video-list {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* 5 */
+@media (min-width: 1500px) {
+  .video-list {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+
+
+/* Карточка сама держит высоту 16:9 — одинаково в TG / Safari / Desktop */
+.video-card {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #111;
+}
+
+/* Превью (jpg) занимает всю карточку */
+.video-card img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  background: #050506;
+}
+
+
+/* аккуратная заглушка */
+.video-empty { /* ADDED */
+  margin: auto;
+  opacity: 0.7;
+  font-size: 14px;
+}
+
+/* ===== VIDEO PLAY MODE (fullscreen only for active card) ===== */ /* CHANGED */
+body.video-playing #videoOverlay,
+body.video-player-open #videoOverlay {
+  padding: 0;
+}
+
+/* скрываем все карточки кроме активной */
+body.video-playing .video-card:not(.active) { /* ADDED */
+  display: none;
+}
+
+body.video-playing .video-card.active { /* ADDED */
+  position: absolute;
+  inset: 0;
+}
+
+body.video-playing .video-card.active video { /* ADDED */
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+  object-fit: contain;
+}
+.model-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* или cover, если захочешь кроп */
+  border-radius: 10px;
+  display: block;
+}
+      
+/* В режиме врезок вкладки и оверлеи управляются JS */
+body.inset-mode.inset-no-tabs .viewer-tabs-row {
+  display: none !important;
+}
+/* ✅ Breadcrumb всегда видимый поверх header и не схлопывается */
+#breadcrumbBar {
+  position: relative;
+  z-index: 10;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin-right: 10px;
+}
+      #breadcrumbBar .btn {
+  position: relative;
+  z-index: 60;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+/* Если header режет содержимое — убираем обрезку */
+.app-header {
+  overflow: visible;
+}
+/* Центрированный заголовок раздела — стабильный на всех платформах */
+#headerCenterTitle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+
+  width: calc(100% - 220px);
+  max-width: 520px;
+
+  font-size: 14px;
+  line-height: 1.1;
+  font-weight: 700;
+  color: #f5f5f5;
+  text-align: center;
+
+  white-space: normal;
+
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Ползунок виден только во Врезках, только если у карточки есть 3D,
+   и только когда активна вкладка 3D */
+body.inset-mode.inset-has-3d.inset-view-3d #insetOpacityRow {
+  display: flex !important;
+}
+
+body.inset-mode #insetOpacityRow {
+  display: none !important;
+}
+
+/* Лёгкий стиль для range, чтобы выглядел аккуратно */
+#insetOpacitySlider {
+  accent-color: #8888ff;
+}
+
+/* ✅ Чтобы range нормально "тянулся" в Telegram/iOS/Android */
+#insetOpacityRow,
+#insetOpacitySlider {
+  pointer-events: auto !important;
+  touch-action: pan-x !important;   /* разрешаем горизонтальный drag */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+
+
+
+
+
+
+  </style>
+
+  <!-- ============================
+       IMPORTMAP (как в 8.html)
+       ============================ -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.153.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.153.0/examples/jsm/"
+    }
+  }
+  </script>
+
+</head>
+<body>
+<div class="app-root">
+  <header class="app-header">
+    <!-- ✅ Breadcrumb (слева). В стиле ваших .btn -->
+<div id="breadcrumbBar" style="align-items:center; gap:8px;">
+  <button class="btn" id="breadcrumbBackBtn">←</button>
+
+  <button class="btn" id="breadcrumbHomeBtn">☰</button>
+
+  <span id="breadcrumbSectionLabel" style="display:none;"></span>
+</div>
+    
+<div id="headerCenterTitle"></div>
+    
+<a href="/cabinet" id="cabinetBtn" class="btn" style="margin-left:auto; text-decoration:none;">В кабинет</a>
+
+<div id="brandBlock">
+  <div class="app-title">КОД архитектора</div>
+  <div class="app-subtitle">Подготовка к архитектуре с Лизой</div>
+</div>
+
+  </header>
+
+  <main class="app-main">
+    <!-- ГАЛЕРЕЯ -->
+    <div class="gallery" id="gallery"></div>
+
+    <!-- ВЬЮЕР -->
+    <div class="viewer-wrapper" id="viewerWrapper">
+      <div class="viewer-toolbar">
+<div class="viewer-toolbar-row viewer-model-row">
+  <div class="model-label" id="modelLabel"></div>
+</div>
+
+<div class="viewer-toolbar-row viewer-tabs-row legacy-tabs-row">
+  <div class="viewer-tabs">
+    <button class="btn tab-btn active" id="tab3d">3D</button>
+    <button class="btn tab-btn" id="tabScheme">Схема</button>
+    <button class="btn tab-btn" id="tabPhoto">Фото</button>
+    <button class="btn tab-btn" id="tabVideo">Видео</button>
+  </div>
+</div>
+
+<div class="viewer-toolbar-row universal-blocks-row" id="universalBlocksRow" style="display:none;">
+  <div class="viewer-tabs universal-blocks" id="universalBlocks"></div>
+</div>
+
+<div class="viewer-toolbar-row universal-subblocks-row" id="universalSubblocksRow" style="display:none;">
+  <div class="viewer-tabs universal-subblocks" id="universalSubblocks"></div>
+</div>
+
+<!-- Старая nav-строка остаётся в DOM, но скрыта CSS.
+     Пока не удаляем, чтобы не сломать JS на этом шаге. -->
+<div class="viewer-toolbar-row viewer-nav-row">
+  <button class="btn nav-btn" id="prevBtn">Предыдущая</button>
+  <button class="btn nav-btn" id="backBtn" style="display:none">Галерея</button>
+  <button class="btn nav-btn" id="nextBtn">Следующая</button>
+</div>
+        <div class="viewer-toolbar-row" id="insetOpacityRow" style="display:none; gap:10px; align-items:center;">
+  <div style="font-size:12px; opacity:.75; min-width:110px;">Прозрачность</div>
+  <input id="insetOpacitySlider" type="range" min="0" max="100" value="100" style="flex:1;">
+</div>
+      </div>
+
+      <div class="viewer-main">
+        <canvas id="canvas"></canvas>
+
+<div id="watermark" class="watermark"></div>
+
+
+<div class="alt-overlay" id="schemeOverlay">
+  <button class="scheme-nav-btn prev" id="schemePrevBtn" type="button" aria-label="Предыдущая схема">‹</button>
+  <img id="schemeImage" src="" alt="Схема построения" />
+  <button class="scheme-nav-btn next" id="schemeNextBtn" type="button" aria-label="Следующая схема">›</button>
+</div>
+
+<!-- ВИДЕО -->
+<div class="alt-overlay" id="videoOverlay">
+  <div id="videoList" class="video-list"></div> <!-- ADDED -->
+  <div id="videoEmpty" class="video-empty" style="display:none;">Нет видео</div> <!-- ADDED -->
+</div>
+      </div>
+
+<div class="viewer-bottom-nav" id="viewerBottomNav">
+
+<button class="viewer-bottom-nav-btn arrow" id="bottomPrevBtn" type="button" aria-label="Предыдущая">‹</button>
+<button class="viewer-bottom-nav-btn" id="bottomBackBtn" type="button" style="display:none">Галерея</button>
+<button class="viewer-bottom-nav-btn arrow" id="bottomNextBtn" type="button" aria-label="Следующая">›</button>
+
+</div>
+
+      <!-- LOADING OVERLAY -->
+      <div id="loading">
+        <div class="loader-ring"></div>
+        <div id="loadingText">Загрузка...</div>
+        <div class="loading-bar">
+          <div class="loading-bar-inner" id="progressBar"></div>
+        </div>
+      </div>
+
+      <div id="status"></div>
+    </div>
+  </main>
+</div>
+
+<!-- ============================
+     ПОДКЛЮЧЕНИЕ ПРИЛОЖЕНИЯ
+     ============================ -->
+<script id="lab-user-json" type="application/json">{{ lab_user | tojson }}</script>
+<script>
+(function () {
+  try {
+    const raw = document.getElementById("lab-user-json")?.textContent?.trim() || "";
+    window.LAB_USER = JSON.parse(raw);
+  } catch (e) {
+    window.LAB_USER = null;
+  }
+})();
+</script>
+<script type="module" src="../static/3dlab/js/app.js"></script>
+  <script>
+(function () {
+  function isVisibleButton(el) {
+    if (!el) return false;
+    const style = window.getComputedStyle(el);
+    return style.display !== "none" && style.visibility !== "hidden";
+  }
+
+  function updateSegmentedControl(segmented) {
+    if (!segmented) return;
+
+    const buttons = Array.from(segmented.querySelectorAll(".tab-btn"))
+      .filter(isVisibleButton);
+
+    if (!buttons.length) {
+      segmented.style.setProperty("--seg-w", "0px");
+      segmented.style.setProperty("--seg-x", "0px");
+      return;
+    }
+
+    const activeBtn =
+      buttons.find((btn) => btn.classList.contains("active")) || buttons[0];
+
+    const wrapRect = segmented.getBoundingClientRect();
+    const btnRect = activeBtn.getBoundingClientRect();
+
+const x = Math.round(btnRect.left - wrapRect.left - 4);
+const w = Math.round(btnRect.width);
+
+    segmented.style.setProperty("--seg-x", x + "px");
+    segmented.style.setProperty("--seg-w", w + "px");
+  }
+
+  function updateAllSegmentedControls() {
+    document.querySelectorAll(".viewer-tabs").forEach(updateSegmentedControl);
+  }
+
+  function bindSegmentedControl(segmented) {
+    if (!segmented || segmented.__segmentedBound) return;
+    segmented.__segmentedBound = true;
+
+    const observer = new MutationObserver(() => {
+      requestAnimationFrame(updateAllSegmentedControls);
+    });
+
+    observer.observe(segmented, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["class", "style"]
+    });
+
+    segmented.__segmentedObserver = observer;
+    requestAnimationFrame(() => updateSegmentedControl(segmented));
+  }
+
+  function initSegmentedControls() {
+    document.querySelectorAll(".viewer-tabs").forEach(bindSegmentedControl);
+    updateAllSegmentedControls();
+  }
+
+  window.addEventListener("resize", () => {
+    requestAnimationFrame(updateAllSegmentedControls);
+  });
+
+  window.addEventListener("orientationchange", () => {
+    setTimeout(updateAllSegmentedControls, 120);
+  });
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", () => {
+      requestAnimationFrame(updateAllSegmentedControls);
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    initSegmentedControls();
+
+    setTimeout(updateAllSegmentedControls, 50);
+    setTimeout(updateAllSegmentedControls, 200);
+    setTimeout(updateAllSegmentedControls, 500);
+  });
+
+  window.updateAllSegmentedControls = updateAllSegmentedControls;
+})();
+</script>
+
+</body>
+</html>
