@@ -10,7 +10,8 @@ import { INSET_SOURCE_DEFS } from "./insetsModels.js";
 import { ROOM_SOURCE_DEFS } from "./roomsModels.js";
 
 // БАЗОВЫЙ URL для защищённого доступа
-const BASE = "https://api.apparchi.ru/?path=";
+const BASE =
+  "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/";
 // ✅ Source-модели для врезок (генерятся из insetsModels.js)
 const INSET_SOURCE_MODELS = (INSET_SOURCE_DEFS || []).map((d) => ({
   id: d.id,
