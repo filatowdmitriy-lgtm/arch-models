@@ -1,4 +1,5 @@
 import { getFile, saveFile } from "./db.js";
+import { getAssetCacheKey } from "../assetUrl.js";
 
 // Логирование для отладки
 function log(msg) {
@@ -10,11 +11,7 @@ const inflight = new Map();
 
 export async function cachedFetch(url) {
   // ❗ Выделяем objectPath из URL (как у тебя и было)
-  const u = new URL(url);
-  const objectPath = u.searchParams.get("path");
-
-  // Ключ кеша
-  const cacheKey = objectPath || url;
+const cacheKey = getAssetCacheKey(url);
 
   // Если этот же ресурс уже качается/пишется — ждём тот же промис
   if (inflight.has(cacheKey)) {
